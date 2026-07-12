@@ -54,16 +54,19 @@
   header .spacer,footer .spacer{flex:1}
   .sep{width:1px;height:16px;background:var(--line);flex:none}
 
-  button,select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:4px;
-    padding:4px 9px;font-size:11px;letter-spacing:.01em;cursor:pointer;font-family:var(--ui)}
+  button,select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:6px;
+    padding:5px 10px;font-size:12px;font-weight:500;letter-spacing:0;cursor:pointer;font-family:var(--ui);
+    transition:background-color .1s ease,border-color .1s ease}
   select{appearance:none;padding-right:20px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%237f8b99' fill='none'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 6px center}
-  button:hover,select:hover{border-color:var(--cyan)}
-  button:hover{color:var(--cyan)}
-  button.primary{background:rgba(var(--accent-rgb),.08);border-color:var(--cyan);color:var(--cyan)}
-  button.active{background:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
-  button:disabled{opacity:.35;pointer-events:none}
+  /* hover lifts the fill + border (GitHub model), never recolors the label */
+  button:hover,select:hover{background-color:var(--line);border-color:var(--faint)}
+  button.primary{background-color:var(--accent);border-color:var(--accent);color:#0a0e13;font-weight:600}
+  button.primary:hover{background-color:#83abd2;border-color:#83abd2}
+  button.active{background-color:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
+  button.active:hover{background-color:rgba(var(--accent-rgb),.24);border-color:var(--cyan)}
+  button:disabled{opacity:.4;pointer-events:none}
   #seriesSel{color:var(--green);border-color:#2b4634;max-width:340px;min-width:0}
   #crossOnly{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);white-space:nowrap;cursor:pointer}
   #crossOnly input{accent-color:var(--cyan);cursor:pointer;margin:0}
@@ -147,7 +150,8 @@
 
   .tabs{position:absolute;top:24px;left:0;display:flex;z-index:3}
   .tabs button{padding:2px 8px;font-size:10px;border-radius:0;border-left-width:0;background:rgba(10,12,15,.85)}
-  .tabs button:first-child{border-left-width:1px}
+  .tabs button:first-child{border-left-width:1px;border-radius:6px 0 0 6px}
+  .tabs button:last-child{border-radius:0 6px 6px 0}
   .tabs button.active{background:rgba(var(--accent-rgb),.18)}
   /* CPR level-label control (straightened-spine cell only) */
   .cell.cpr .levelctl{position:absolute;top:4px;right:26px;z-index:3;display:flex;gap:3px}
