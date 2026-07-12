@@ -1,6 +1,6 @@
 # Meridian
 
-**A local-first DICOM imaging workstation for study review, MPR, 3D, series management, and research notes.**
+**A local-first DICOM imaging workstation for study review, MPR, 3D, and series management.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Single file](https://img.shields.io/badge/build-single%20HTML%20file-black)
@@ -14,8 +14,8 @@
 ![Meridian — linked sagittal / coronal / axial MPR](docs/hero.png)
 
 Open [index.html](index.html) to enter the Meridian workstation. Its routed
-Overview, Viewer, Series, and Notes workspaces stay inside one portable offline
-HTML app. Drop a study folder to get linked axial / coronal / sagittal MPR views
+Overview, Viewer, and Series workspaces stay inside one portable offline HTML
+app. Drop a study folder to get linked axial / coronal / sagittal MPR views
 plus a WebGL2 raycast 3D volume. No upload and no network — everything runs in
 the tab.
 
@@ -38,11 +38,14 @@ python3 -m http.server 8137 --bind 127.0.0.1
 
 ## Features
 
-- **Four routed workspaces** — a session overview, focused workstation-style
-  viewer, searchable series inventory, and exportable in-memory research notes.
+- **Three routed workspaces** — a session overview, focused workstation-style
+  viewer, and searchable series inventory.
   Direct links such as `#viewer` and `#series` restore the intended workspace.
 - **Series manager** — filter by description, modality, or series number; inspect
   geometry and transfer syntax; launch any series directly into the viewer.
+- **Resizable hanging protocols** — 1×2 through 1×4 and 2×1 through 4×1
+  layouts have draggable dividers, so the clinically important plane can take
+  more space. Double-click a divider or use **Reset equal** to restore sizing.
 - **Two layouts** — *MPR + 3D* (linked crosshair through one series) and
   *Acquired series* (every series in its native plane, full resolution).
   Cells auto-pack by aspect ratio, or switch to fixed PACS-style grids (1×1–4×4).
@@ -52,10 +55,13 @@ python3 -m http.server 8137 --bind 127.0.0.1
 - **Honest reformats** — each view is tagged **ACQUIRED**, **REFORMAT**, or
   **RENDERED**, and shows its effective pixel size, so lower through-plane
   resolution is always visible. Oblique stacks get an angle badge.
-- **3D volume** — MIP, depth-colored MIP, or gradient-shaded composite, with
-  crosshair-linked slice outlines and clipping.
+- **3D volume and density transfer** — MIP, depth-colored MIP, or
+  gradient-shaded composite with HU-aware soft-tissue, bone, and lung isolation,
+  a manual density band, four color gradients, slice outlines, and clipping.
 - **Tools** — window/level (drag or presets), mm distance measure, probe
-  readout, colormaps (Gray / Inferno), invert, L/R mirror, PNG snapshot.
+  readout, Gray / Inferno / Viridis / Turbo mapping, invert, L/R mirror, PNG snapshot.
+- **Fast navigation** — `Ctrl/⌘ K` opens a command palette, `Alt+1–3` switches
+  workspaces, and `F` gives the viewer a distraction-free canvas.
 
 ## Supported DICOM
 
