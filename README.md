@@ -11,6 +11,8 @@
 > **For research and education only — not a medical device.** Not cleared or
 > certified for clinical or diagnostic use. See [Disclaimer](#disclaimer).
 
+![Meridian — linked sagittal / coronal / axial MPR](docs/hero.png)
+
 Open [index.html](index.html), drop a study folder on it, and get linked
 axial / coronal / sagittal MPR views plus a WebGL2 raycast 3D volume. No server,
 no upload, no network — everything runs in the tab.
