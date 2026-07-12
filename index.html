@@ -84,7 +84,8 @@
   #grid{position:relative;min-height:0;background:var(--bg);overflow:hidden}
   .cell{position:absolute;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;
     border:1px solid var(--line);border-color:color-mix(in srgb,var(--pc,#39424e) 32%,#0b0d10)}
-  .cell canvas.slice{max-width:100%;max-height:100%;image-rendering:auto;cursor:crosshair}
+  .cell canvas.slice{max-width:100%;max-height:100%;image-rendering:auto;cursor:crosshair;touch-action:none}
+  #v3d{touch-action:none}
 
   /* view tag: plane-colored, chip square rotates by the acquisition tilt */
   .tag{position:absolute;top:0;left:0;display:flex;align-items:center;gap:7px;padding:3px 9px 3px 7px;
@@ -289,7 +290,7 @@
         </select>
         <input type="range" id="density3d" min="0" max="1" step="0.01" value="0.5" title="Density (Composite) / contrast (MIP)" aria-label="3D density">
       </div>
-      <div class="info r">drag rotate · wheel zoom</div>
+      <div class="info r">drag rotate · wheel/pinch zoom</div>
     </div>
   </div>
 
@@ -306,6 +307,8 @@
       <span><kbd>⇧drag</kbd> W/L</span>
       <span><kbd>wheel</kbd> slice</span>
       <span><kbd>⌃/⌘wheel</kbd> zoom</span>
+      <span><kbd>pinch</kbd> zoom</span>
+      <span><kbd>W/S·A/D</kbd> W/L</span>
       <span><kbd>middle/⌥drag</kbd> pan</span>
       <span><kbd>dbl-click</kbd> reset</span>
       <span><kbd>⟳ handle</kbd> oblique tilt</span>
@@ -1411,6 +1414,8 @@ function bindPointer(k){
   v.bound = true;
   v.zoom = 1; v.panX = 0; v.panY = 0;
   let wl = null, pan = null;
+  const ptrs = new Map();            // active touch/pen/mouse pointers → last client pos
+  let pinch = null, multiTouch = false; // two-finger pinch: {d, z, cx, cy}; multiTouch mutes crosshair placement
   const toVox = e => {
     const r = v.c.getBoundingClientRect();
     let px = Math.min(v.c.width-1, Math.max(0, ((e.clientX-r.left)/r.width*v.c.width)|0));
@@ -1431,6 +1436,13 @@ function bindPointer(k){
   v.c.addEventListener("pointerleave", () => setProbe("—", "—"));
   v.c.addEventListener("pointerdown", e => {
     v.c.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (ptrs.size === 2){                     // second finger → pinch: cancel any single-touch gesture
+      wl = null; pan = null; v.ruler = null; multiTouch = true;
+      const [a,b] = [...ptrs.values()];
+      pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), z:v.zoom||1, cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
+      drawAll(); return;
+    }
     if (isPanBtn(e)){ e.preventDefault(); pan = { x:e.clientX, y:e.clientY }; }
     else if (SPINE.mode){ const [px,py] = toVox(e); spineSeed(k, px, py); }
     else if (S.measure){ const [px,py] = toVox(e); v.ruler = { x0:px, y0:py, x1:px, y1:py }; drawAll(); }
@@ -1438,6 +1450,19 @@ function bindPointer(k){
     else place(e);
   });
   v.c.addEventListener("pointermove", e => {
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (pinch){                               // two-finger pinch → zoom toward the midpoint + pan with it
+      const [a,b] = [...ptrs.values()];
+      if (!a || !b) return;
+      const d = Math.hypot(a.x-b.x, a.y-b.y), cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
+      const r = v.c.getBoundingClientRect();
+      const z1 = Math.min(MAXZOOM, Math.max(1, pinch.z * d/(pinch.d||1)));
+      vpZoomTo(v.c, v, (cx-r.left)/r.width, (cy-r.top)/r.height, z1);
+      vpPan(v.c, v, cx-pinch.cx, cy-pinch.cy);
+      pinch.cx = cx; pinch.cy = cy;
+      mprSyncZoom(z1, k); mprBroadcast(k);
+      return;
+    }
     if (S.vol){
       const [px, py] = toVox(e);
       let vx, vy, vz;
@@ -1462,9 +1487,16 @@ function bindPointer(k){
       S.ww = Math.max(1, wl.ww + (e.clientX-wl.x)/300*range);
       S.wc = wl.wc + (wl.y-e.clientY)/300*range;
       drawAll(); sync3DWindow();
-    } else if (!SPINE.mode) place(e);
+    } else if (!SPINE.mode && !multiTouch) place(e);
   });
-  v.c.addEventListener("pointerup", () => { wl = null; pan = null; });
+  const endPtr = e => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;          // dropped below two fingers → leave pinch
+    if (ptrs.size === 0) multiTouch = false;  // ...but don't re-place crosshair until all lifted
+    wl = null; pan = null;
+  };
+  v.c.addEventListener("pointerup", endPtr);
+  v.c.addEventListener("pointercancel", endPtr);
   v.c.addEventListener("dblclick", () => { vpReset(v.c, v); mprSyncZoom(1, k); v.ruler = null; drawAll(); });
   const wst = {};
   v.c.addEventListener("wheel", e => {
@@ -1567,6 +1599,15 @@ addEventListener("keydown", e => {
     e.preventDefault();
     const d = key === "arrowup" ? -1 : key === "arrowdown" ? 1 : key === "pageup" ? -5 : 5;
     stepNormal(S.hover || "XY", d);
+  }
+  else if ("wsad".includes(key)){                 // W/S widen/narrow window, A/D lower/raise level
+    if (STUDY.active) return;                      // grid mode is per-cell W/L, no single active target
+    const step = ((S.maxV-S.minV)*S.slope || 1000)*0.025;
+    if (key === "w") S.ww += step;
+    else if (key === "s") S.ww = Math.max(1, S.ww-step);
+    else if (key === "d") S.wc += step;
+    else S.wc -= step;                             // "a"
+    drawAll(); sync3DWindow();
   }
 });
 
@@ -2505,8 +2546,17 @@ async function buildStudyCells(){
       if (d) setSlice(wrap(st.iz+d, V.nz)); // wheel wraps past the ends of the stack
     }, { passive:false });
     let wl = null, pan = null;
+    const ptrs = new Map();
+    let pinch = null, multiTouch = false;
     cv.addEventListener("pointerdown", e => {
       cv.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+      if (ptrs.size === 2){                   // second finger → pinch-zoom this compare cell
+        wl = null; pan = null; multiTouch = true;
+        const [a,b] = [...ptrs.values()];
+        pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), z:st.zoom||1, cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
+        return;
+      }
       const cu = st.variants[st.cur];
       if (isPanBtn(e)){ e.preventDefault(); pan = { x:e.clientX, y:e.clientY }; }
       else if (e.shiftKey) wl = { x:e.clientX, y:e.clientY, wc:cu.wc, ww:cu.ww };
@@ -2515,6 +2565,19 @@ async function buildStudyCells(){
     cv.addEventListener("pointerleave", () => setProbe("—", "—"));
     cv.addEventListener("dblclick", () => { vpReset(cv, st); syncZoom(1, st); });
     cv.addEventListener("pointermove", e => {
+      if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+      if (pinch){                             // two-finger pinch → zoom toward the midpoint + pan with it
+        const [a,b] = [...ptrs.values()];
+        if (!a || !b) return;
+        const d = Math.hypot(a.x-b.x, a.y-b.y), cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
+        const r = cv.getBoundingClientRect();
+        const z1 = Math.min(MAXZOOM, Math.max(1, pinch.z * d/(pinch.d||1)));
+        vpZoomTo(cv, st, (cx-r.left)/r.width, (cy-r.top)/r.height, z1);
+        vpPan(cv, st, cx-pinch.cx, cy-pinch.cy);
+        pinch.cx = cx; pinch.cy = cy;
+        syncZoom(z1, st); broadcastFocus(st);
+        return;
+      }
       { const [px, py] = toVox(e), cu = st.variants[st.cur];
         const off = st.iz*V.nx*V.ny + py*V.nx + px;
         setProbe(`${px},${py},${st.iz}`, cu.V.volC
@@ -2528,9 +2591,16 @@ async function buildStudyCells(){
         cu.ww = Math.max(1, wl.ww + (e.clientX-wl.x)/300*range);
         cu.wc = wl.wc + (wl.y-e.clientY)/300*range;
         st.draw();
-      } else place(e);
+      } else if (!multiTouch) place(e);
     });
-    cv.addEventListener("pointerup", () => { wl = null; pan = null; });
+    const endPtr = e => {
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch = null;
+      if (ptrs.size === 0) multiTouch = false;
+      wl = null; pan = null;
+    };
+    cv.addEventListener("pointerup", endPtr);
+    cv.addEventListener("pointercancel", endPtr);
     cell.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
       st.cur = +b.dataset.i;
       cell.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
@@ -2879,14 +2949,37 @@ function init3D(){
     }
   };
   let drag = null;
-  canvas.addEventListener("pointerdown", e => { drag = { x:e.clientX, y:e.clientY }; mat.uniforms.u_steps.value = 160; canvas.setPointerCapture(e.pointerId); });
+  const ptrs = new Map();            // active pointers for two-finger pinch
+  let pinch = null;                  // {d, r}: finger distance + orbit radius at pinch start
+  canvas.addEventListener("pointerdown", e => {
+    canvas.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (ptrs.size === 2){            // second finger → pinch-zoom, suspend orbit
+      const [a,b] = [...ptrs.values()];
+      pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), r:orbit.r }; drag = null; return;
+    }
+    drag = { x:e.clientX, y:e.clientY }; mat.uniforms.u_steps.value = 160;
+  });
   canvas.addEventListener("pointermove", e => {
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (pinch){                      // fingers apart → smaller radius (closer)
+      const [a,b] = [...ptrs.values()];
+      if (!a || !b) return;
+      const d = Math.hypot(a.x-b.x, a.y-b.y);
+      orbit.r = Math.min(6, Math.max(0.8, pinch.r * pinch.d/(d||1))); render(); return;
+    }
     if (!drag || !e.buttons) return;
     orbit.theta -= (e.clientX-drag.x)*0.008;
     orbit.phi = Math.min(Math.PI-0.05, Math.max(0.05, orbit.phi - (e.clientY-drag.y)*0.008));
     drag = { x:e.clientX, y:e.clientY }; render();
   });
-  canvas.addEventListener("pointerup", () => { drag = null; mat.uniforms.u_steps.value = 350; render(); });
+  const end3d = e => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0){ drag = null; mat.uniforms.u_steps.value = 350; render(); }
+  };
+  canvas.addEventListener("pointerup", end3d);
+  canvas.addEventListener("pointercancel", end3d);
   canvas.addEventListener("wheel", e => { e.preventDefault(); orbit.r = Math.min(6, Math.max(0.8, orbit.r*(1+Math.sign(e.deltaY)*0.08))); render(); }, { passive:false });
   $("mode3d").onchange = e => { mat.uniforms.u_mode.value = +e.target.value; render(); };
   $("clip3d").onchange = e => { clip.axis = +e.target.value; render(); };
