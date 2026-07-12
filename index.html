@@ -1,0 +1,2952 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Meridian — single-file, fully offline DICOM MPR and 3D volume viewer. Linked axial/coronal/sagittal reformats, WebGL2 raycast rendering, straightened-spine CPR. Runs entirely in the browser tab; no upload.">
+<title>Meridian — DICOM MPR &amp; volume viewer</title>
+<script src="lib/dicomParser.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="lib/jpeg-lossless.js"></script>
+<script src="lib/openjpeg-decode.wasm.js"></script>
+<script src="lib/openjpeg-decode.js"></script>
+<script src="lib/charls-decode.wasm.js"></script>
+<script src="lib/charls-decode.js"></script>
+<style>
+  :root{
+    /* Near-black neutral chrome. Plane colors stay semantic and punchy —
+       axial red · coronal green · sagittal yellow · 3D magenta — the only
+       saturated colors in the UI; everything else is quiet. */
+    --bg:#080a0d; --panel:#0e1116; --panel-2:#161a20;
+    --line:#222831; --line-2:#333b45;
+    --text:#dbe1e8; --dim:#828d9b; --faint:#4c5561;
+    --red:#ff5f5f; --green:#5fe884; --yellow:#ffd75f;
+    --magenta:#ff87d7; --orange:#ffaf5f;
+    /* --cyan kept as a name for the chrome accent (many refs); now a muted steel-blue, not neon */
+    --cyan:#6f9dc9; --accent:#6f9dc9; --accent-rgb:111,157,201;
+    --ui:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;
+    --mono:"SF Mono","Cascadia Code","JetBrains Mono",Consolas,"DejaVu Sans Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:12px;overflow:hidden;-webkit-font-smoothing:antialiased}
+  /* monospace reserved for numeric data readouts, not chrome */
+  .info,#infoPanel dd,footer#wl b,#cbRange,.tag em,kbd{font-family:var(--mono)}
+
+  /* minmax(0,1fr) column: wide header content must never stretch the grid past the window */
+  #app{display:grid;grid-template-rows:40px minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);height:100vh}
+
+  /* ── header ───────────────────────────────────────────── */
+  header{display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);overflow:hidden}
+  header h1{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;letter-spacing:.005em;color:var(--text);white-space:nowrap}
+  header h1 span{color:var(--dim);font-weight:400;font-size:11px;letter-spacing:.01em}
+  header h1 span::before{content:"";display:inline-block;width:1px;height:11px;background:var(--line-2);margin-right:9px;vertical-align:-1px}
+  /* Meridian logomark: three plane-colored meridians crossing (axial · coronal · sagittal) */
+  .mark{width:22px;height:22px;flex:none;display:block}
+  .mark .ring{stroke:var(--line-2);stroke-width:1;fill:none}
+  .mark .m-ax,.mark .m-cor,.mark .m-sag{stroke-width:1.6;stroke-linecap:round}
+  .mark .m-ax{stroke:var(--red)} .mark .m-cor{stroke:var(--green)} .mark .m-sag{stroke:var(--yellow)}
+  .mark .hub{fill:var(--accent)}
+  .mark.big{width:60px;height:60px;margin-bottom:18px}
+  #meta{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  #meta b{color:var(--text);font-weight:600}
+  #meta span::before{content:"·";color:var(--faint);margin:0 6px}
+  header .spacer,footer .spacer{flex:1}
+  .sep{width:1px;height:16px;background:var(--line);flex:none}
+
+  button,select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:4px;
+    padding:4px 9px;font-size:11px;letter-spacing:.01em;cursor:pointer;font-family:var(--ui)}
+  select{appearance:none;padding-right:20px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%237f8b99' fill='none'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 6px center}
+  button:hover,select:hover{border-color:var(--cyan)}
+  button:hover{color:var(--cyan)}
+  button.primary{background:rgba(var(--accent-rgb),.08);border-color:var(--cyan);color:var(--cyan)}
+  button.active{background:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
+  button:disabled{opacity:.35;pointer-events:none}
+  #seriesSel{color:var(--green);border-color:#2b4634;max-width:340px;min-width:0}
+  #crossOnly{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);white-space:nowrap;cursor:pointer}
+  #crossOnly input{accent-color:var(--cyan);cursor:pointer;margin:0}
+  #crossOnly[hidden]{display:none}
+  .cell.mpr .rot{position:absolute;top:4px;right:6px;z-index:3;width:22px;height:22px;padding:0;
+    display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;border-radius:50%;
+    background:rgba(10,12,15,.7);opacity:0;transition:opacity .12s;cursor:grab}
+  .cell.mpr:hover .rot{opacity:.75}
+  .cell.mpr .rot:hover{opacity:1;color:var(--cyan);border-color:var(--cyan)}
+  .cell.mpr.rolled .rot{opacity:1;color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),.16)}
+  .cell.mpr.rolled{box-shadow:inset 0 0 0 1px var(--cyan)}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+
+  /* ── viewport grid — cells packed by aspect ratio (JS), zero dead space ── */
+  #grid{position:relative;min-height:0;background:var(--bg);overflow:hidden}
+  .cell{position:absolute;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    border:1px solid var(--line);border-color:color-mix(in srgb,var(--pc,#39424e) 32%,#0b0d10)}
+  .cell canvas.slice{max-width:100%;max-height:100%;image-rendering:auto;cursor:crosshair}
+
+  /* view tag: plane-colored, chip square rotates by the acquisition tilt */
+  .tag{position:absolute;top:0;left:0;display:flex;align-items:center;gap:7px;padding:3px 9px 3px 7px;
+    font-size:11px;letter-spacing:.03em;pointer-events:none;color:var(--pc,var(--cyan));max-width:100%;
+    background:rgba(0,0,0,.62);border-left:2px solid var(--pc,var(--cyan));border-bottom-right-radius:4px;z-index:2}
+  .study-cell .tag{max-width:calc(100% - 82px)} /* keep clear of the ◱/⇋ buttons top-right */
+  .tag .lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag i{width:8px;height:8px;border:1.5px solid currentColor;flex:none}
+  .tag em{font-style:normal;font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;border:1px solid;flex:none;white-space:nowrap}
+  .tag em.raw{color:var(--green);border-color:rgba(95,232,132,.5);background:rgba(95,232,132,.08)}
+  .tag em.syn{color:var(--dim);border-color:var(--line-2);background:rgba(255,255,255,.04)}
+  .tag em.obl{color:var(--orange);border-color:rgba(255,175,95,.55);background:rgba(255,175,95,.08)}
+  .tag em.est{color:var(--orange);border-color:rgba(255,175,95,.55);background:rgba(255,175,95,.08)}
+
+  /* angle-profile strip — multi-angle series show where each slab's tilt changes */
+  .slabbar{position:absolute;top:23px;left:2px;right:2px;height:4px;display:flex;gap:1px;z-index:2;pointer-events:none;opacity:.92;filter:drop-shadow(0 1px 1px #000)}
+  .slabbar span{height:100%;border-radius:1px}
+  .slabbar .cur{position:absolute;top:-2px;width:2px;height:8px;background:#fff;box-shadow:0 0 3px #000;transform:translateX(-1px);border-radius:1px}
+
+  /* ── small-cell degradation: shed overlay chrome as tiles shrink so the
+     image stays readable. sm hides info/orientation letters and makes the
+     buttons + 3D tools hover-only; xs strips the tag to its bare label and
+     makes the angle bar / tabs / slider hover-only too. ── */
+  .cell.sm .om,.cell.sm .info{display:none}
+  .cell.sm .tag{font-size:10px;gap:5px;padding:2px 7px 2px 5px;max-width:100%}
+  /* keep the ◱ pin (enlarge-to-primary) always visible — it is the only way to
+     make a small tile the large view, so it must never be hover-gated away */
+  .cell.sm button.mirror,.cell.sm .tools3d{display:none}
+  .cell.sm:hover button.mirror{display:block}
+  .cell.sm:hover .tools3d{display:flex}
+  .cell.sm button.pin{padding:1px 5px;font-size:10px}
+  .cell.sm.primary .tag::after{content:none!important}
+  .cell.xs .tag{font-size:9px;gap:4px;padding:1px 5px 1px 4px}
+  .cell.xs .tag i,.cell.xs .tag em,.cell.xs .slabbar{display:none}
+  .cell.xs .tabs,.cell.xs .slice-slider{display:none}
+  .cell.xs:hover .tabs{display:flex}
+  .cell.xs:hover .slice-slider{display:block}
+
+  /* spine seed-picking prompt, floating over the grid */
+  #spineHint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;pointer-events:none;
+    background:rgba(8,10,13,.92);border:1px solid var(--magenta);color:var(--magenta);
+    padding:5px 14px;border-radius:4px;font-size:11px;letter-spacing:.06em;white-space:nowrap}
+
+  .info{position:absolute;bottom:6px;left:8px;font-size:10px;color:var(--dim);pointer-events:none;text-shadow:0 1px 2px #000,0 0 4px #000;z-index:2}
+  .info.r{left:auto;right:8px}
+  .om{position:absolute;font-size:10px;font-weight:700;color:#9fb2c3;opacity:.85;pointer-events:none;text-shadow:0 1px 2px #000;z-index:1}
+  .om.t{top:5px;left:50%;transform:translateX(-50%)}
+  .om.b{bottom:24px;left:50%;transform:translateX(-50%)}
+  .om.l{left:6px;top:50%;transform:translateY(-50%)}
+  .om.r{right:24px;top:50%;transform:translateY(-50%)}
+
+  .slice-slider{position:absolute;accent-color:var(--pc,var(--cyan));opacity:.65;margin:0;z-index:3}
+  .slice-slider:hover,.slice-slider:focus-visible{opacity:1}
+  .slice-slider.v{right:2px;top:14px;height:calc(100% - 28px);width:20px;writing-mode:vertical-lr;direction:rtl}
+  .slice-slider.h{left:14px;bottom:2px;width:calc(100% - 28px);height:20px}
+  .cell:has(.slice-slider.h) .info{bottom:24px}
+  /* center-slice detent marker: a tick at the geometric middle of the scrollbar */
+  .midtick{position:absolute;z-index:3;pointer-events:none;background:var(--pc,var(--cyan));opacity:.8;box-shadow:0 0 3px #000;border-radius:1px}
+  .midtick.v{right:2px;top:calc(50% - 1.5px);width:20px;height:3px}
+  .midtick.h{bottom:2px;left:calc(50% - 1.5px);width:3px;height:20px}
+  .cell.xs .midtick{display:none}
+  .cell.xs:hover .midtick{display:block}
+
+  .tabs{position:absolute;top:24px;left:0;display:flex;z-index:3}
+  .tabs button{padding:2px 8px;font-size:10px;border-radius:0;border-left-width:0;background:rgba(10,12,15,.85)}
+  .tabs button:first-child{border-left-width:1px}
+  .tabs button.active{background:rgba(var(--accent-rgb),.18)}
+  /* CPR level-label control (straightened-spine cell only) */
+  .cell.cpr .levelctl{position:absolute;top:4px;right:26px;z-index:3;display:flex;gap:3px}
+  .cell.cpr .levelctl button{padding:2px 6px;font-size:10px;text-transform:none;background:rgba(10,12,15,.82)}
+  .cell.cpr .levelctl button.on{background:rgba(var(--accent-rgb),.18);border-color:var(--cyan);color:var(--cyan)}
+  .cell.cpr.sm .levelctl{display:none}
+  .cell.cpr.sm:hover .levelctl{display:flex}
+  button.mirror{position:absolute;top:4px;right:26px;z-index:3;padding:2px 7px;font-size:11px;text-transform:none;background:rgba(10,12,15,.7)}
+  button.pin{position:absolute;top:4px;right:52px;z-index:3;padding:2px 6px;font-size:11px;text-transform:none;background:rgba(10,12,15,.7)}
+  button.pin.active{background:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
+  /* the primary / hero view — brighter plane-colored frame (both layouts) */
+  .cell.primary{border-color:var(--pc,var(--cyan))!important;box-shadow:inset 0 0 0 1px var(--pc,var(--cyan)),0 0 12px -6px var(--pc,var(--cyan))}
+  .cell.primary .tag{background:rgba(0,0,0,.72)}
+  .study-cell.primary .tag::after{content:"PRIMARY";font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;color:var(--pc,var(--cyan));border:1px solid currentColor}
+
+  #v3d{display:block;width:100%;height:100%}
+  .tools3d{position:absolute;top:5px;right:6px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;
+    background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;z-index:3}
+  .tools3d input[type=range]{width:72px;accent-color:var(--magenta)}
+
+  /* ── info panel ── */
+  #infoPanel{position:fixed;top:44px;right:6px;bottom:34px;width:330px;overflow-y:auto;z-index:6;
+    background:rgba(8,10,13,.96);border:1px solid var(--line-2);border-radius:4px;padding:10px 12px}
+  #infoPanel h3{color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 5px;
+    border-bottom:1px solid var(--line);padding-bottom:3px}
+  #infoPanel h3:first-child{margin-top:0}
+  #infoPanel dl{display:grid;grid-template-columns:110px 1fr;gap:2px 10px;font-size:11px}
+  #infoPanel dt{color:var(--dim);white-space:nowrap}
+  #infoPanel dd{color:var(--text);word-break:break-word}
+
+  /* ── load screen ── */
+  #drop{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--bg);z-index:10}
+  #drop.hide{display:none}
+  #drop .box{border:1px solid var(--line-2);border-radius:6px;padding:38px 54px;text-align:center;background:var(--panel);transition:border-color .15s,box-shadow .15s}
+  #drop .box.over{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 16px rgba(var(--accent-rgb),.14)}
+  #drop h2{font-size:22px;font-weight:600;letter-spacing:.01em;color:var(--text);margin-bottom:5px}
+  #drop .sub{font-size:11px;letter-spacing:.06em;color:var(--dim);margin-bottom:16px;text-transform:uppercase}
+  #drop p{color:var(--dim);max-width:52ch;line-height:1.55}
+  #drop .row{display:flex;gap:10px;margin-top:18px;justify-content:center}
+  #drop .priv{margin-top:18px;font-size:11px;color:var(--dim)}
+  #drop .priv i{color:var(--green);font-style:normal;margin-right:5px}
+  #drop .disclaimer{margin-top:8px;font-size:10px;color:var(--faint);letter-spacing:.02em}
+  #status{font-size:11px;color:var(--orange);min-height:16px;max-width:76ch;text-align:center;white-space:pre-wrap}
+
+  /* ── status bar ── */
+  footer#wl{display:none;align-items:center;gap:14px;padding:5px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
+  footer#wl.show{display:flex}
+  footer#wl b{color:var(--cyan);font-weight:600}
+  footer#wl #pVal{color:var(--green)}
+  #cbar{width:130px;height:10px;border:1px solid var(--line-2);border-radius:2px;flex:none}
+  kbd{border:1px solid var(--line-2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--text);background:var(--panel-2)}
+  .hints{display:flex;gap:12px;color:var(--faint)}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="ring" cx="12" cy="12" r="9.3"/><line class="m-sag" x1="12" y1="2.4" x2="12" y2="21.6"/><line class="m-ax" x1="2.4" y1="12" x2="21.6" y2="12"/><line class="m-cor" x1="5" y1="19" x2="19" y2="5"/><circle class="hub" cx="12" cy="12" r="1.7"/></svg>Meridian<span>DICOM MPR viewer</span></h1>
+    <div id="meta"></div>
+    <div class="spacer"></div>
+    <!-- view: what you're looking at -->
+    <select id="layoutSel" title="Layout">
+      <option value="study" selected>Acquired series</option>
+      <option value="mpr">MPR + 3D</option>
+    </select>
+    <select id="seriesSel" title="Acquired series — switch the active volume" hidden></select>
+    <select id="gridSel" title="Tile grid" hidden>
+      <option value="auto">Auto grid</option>
+      <option value="1x1">1 × 1</option>
+      <option value="2x1">2 × 1</option>
+      <option value="1x2">1 × 2</option>
+      <option value="2x2">2 × 2</option>
+      <option value="2x3">2 × 3</option>
+      <option value="3x2">3 × 2</option>
+      <option value="3x3">3 × 3</option>
+      <option value="4x4">4 × 4</option>
+    </select>
+    <label id="crossOnly" title="Hide US / color / secondary-capture series — they have no cross-sectional geometry" hidden>
+      <input type="checkbox" checked> Cross-sectional only
+    </label>
+    <span class="sep"></span>
+    <!-- appearance: how it looks -->
+    <select id="preset" title="Window preset">
+      <option value="auto">Auto window</option>
+      <option value="stored">Stored (DICOM)</option>
+      <option value="narrow">Narrow (soft detail)</option>
+      <option value="wide">Wide (full range)</option>
+    </select>
+    <select id="cmapSel" title="Colormap for all views">
+      <option value="0">Gray</option>
+      <option value="1">Inferno</option>
+    </select>
+    <button id="invert" title="Invert grayscale (I)">Invert</button>
+    <button id="scaleBtn" class="active" title="Show every view at the same physical scale (mm) so anatomy is comparable across cells — off = each view fills its own cell">Scale 1:1</button>
+    <button id="linkZoom" class="active" title="Zoom all views together, centered on the shared crosshair, and keep them level — off = zoom each view independently">Link zoom</button>
+    <button id="convBtn" class="active" title="L/R display convention. Neuro = patient-left on the viewer's left (mirror-like, less confusing). Radiological = patient-left on the viewer's right (native scan geometry). Sagittal views are unaffected.">Neuro</button>
+    <span class="sep"></span>
+    <!-- tools -->
+    <button id="measure" title="Drag on a slice to measure distance in mm (M)">Measure</button>
+    <button id="spineBtn" title="Trace the spinal canal: click it at the top, then at the bottom (sagittal T2 works best) — builds a straightened-spine CPR view. Click again to clear.">Spine</button>
+    <button id="snap" title="Save all views as one PNG">Snapshot</button>
+    <button id="infoBtn" title="Patient, study, series & slicing details">Info</button>
+    <span class="sep"></span>
+    <button id="reload" class="primary">Open…</button>
+  </header>
+
+  <div id="grid">
+    <div id="spineHint" hidden></div>
+    <div class="cell mpr"><canvas class="slice" id="cXY"></canvas><div class="tag" id="tXY"></div><div class="info" id="iXY"></div>
+      <button class="rot" data-k="XY" title="Drag to tilt the slice (oblique) · double-click to reset">⟳</button>
+      <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
+      <input type="range" class="slice-slider v" id="sXY" min="0" value="0" step="1" aria-label="Slice XY"></div>
+    <div class="cell mpr"><canvas class="slice" id="cXZ"></canvas><div class="tag" id="tXZ"></div><div class="info" id="iXZ"></div>
+      <button class="rot" data-k="XZ" title="Drag to tilt the slice (oblique) · double-click to reset">⟳</button>
+      <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
+      <input type="range" class="slice-slider v" id="sXZ" min="0" value="0" step="1" aria-label="Slice XZ"></div>
+    <div class="cell mpr"><canvas class="slice" id="cYZ"></canvas><div class="tag" id="tYZ"></div><div class="info" id="iYZ"></div>
+      <button class="rot" data-k="YZ" title="Drag to tilt the slice (oblique) · double-click to reset">⟳</button>
+      <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
+      <input type="range" class="slice-slider v" id="sYZ" min="0" value="0" step="1" aria-label="Slice YZ"></div>
+    <div class="cell mpr"><canvas id="v3d"></canvas><div class="tag"><span class="lbl">3D VOLUME</span><em class="syn">RENDERED</em></div>
+      <div class="tools3d">
+        <select id="mode3d" title="Render mode">
+          <option value="0">MIP</option>
+          <option value="2" selected>Depth MIP</option>
+          <option value="1">Composite</option>
+        </select>
+        <button id="slices3d" class="active" title="Show crosshair slice-plane outlines">Slices</button>
+        <select id="clip3d" title="Cut away at the crosshair plane (camera side)">
+          <option value="-1">No clip</option>
+          <option value="0">Clip X</option>
+          <option value="1">Clip Y</option>
+          <option value="2">Clip Z</option>
+        </select>
+        <input type="range" id="density3d" min="0" max="1" step="0.01" value="0.5" title="Density (Composite) / contrast (MIP)" aria-label="3D density">
+      </div>
+      <div class="info r">drag rotate · wheel zoom</div>
+    </div>
+  </div>
+
+  <footer id="wl">
+    <span>W/L <b id="wlv">—</b></span>
+    <canvas id="cbar" width="256" height="10"></canvas>
+    <span id="cbRange"></span>
+    <span class="sep"></span>
+    <span>POS <b id="pPos">—</b></span>
+    <span>VAL <b id="pVal">—</b></span>
+    <span class="spacer"></span>
+    <span class="hints">
+      <span><kbd>drag</kbd> crosshair</span>
+      <span><kbd>⇧drag</kbd> W/L</span>
+      <span><kbd>wheel</kbd> slice</span>
+      <span><kbd>⌃/⌘wheel</kbd> zoom</span>
+      <span><kbd>middle/⌥drag</kbd> pan</span>
+      <span><kbd>dbl-click</kbd> reset</span>
+      <span><kbd>⟳ handle</kbd> oblique tilt</span>
+      <span><kbd>M</kbd> measure</span>
+      <span><kbd>I</kbd> invert</span>
+    </span>
+  </footer>
+</div>
+
+<div id="infoPanel" hidden></div>
+
+<div id="drop">
+  <div class="box" id="dropbox">
+    <svg class="mark big" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="ring" cx="12" cy="12" r="9.3"/><line class="m-sag" x1="12" y1="2.4" x2="12" y2="21.6"/><line class="m-ax" x1="2.4" y1="12" x2="21.6" y2="12"/><line class="m-cor" x1="5" y1="19" x2="19" y2="5"/><circle class="hub" cx="12" cy="12" r="1.7"/></svg>
+    <h2>Meridian</h2>
+    <p class="sub">DICOM MPR · 3D volume · acquired series</p>
+    <p>Drop a study folder or files anywhere on this window — every series is detected and switchable in the header.</p>
+    <div class="row">
+      <button class="primary" id="pickFiles">Choose files</button>
+      <button id="pickDir">Choose folder</button>
+      <button id="backView" hidden title="Return to the loaded study (Esc)">← Back</button>
+    </div>
+    <p class="priv"><i>●</i> runs entirely in this tab — no upload, no network</p>
+    <p class="disclaimer">For research and education only — not a medical device, not for diagnostic use.</p>
+  </div>
+  <div id="status"></div>
+  <input type="file" id="fFiles" multiple hidden>
+  <input type="file" id="fDir" webkitdirectory hidden>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Volume state
+   ============================================================ */
+const S = {
+  vol:null, nx:0, ny:0, nz:0, sx:1, sy:1, sz:1,
+  slope:1, intercept:0, minV:0, maxV:1,
+  wc:0, ww:1, storedWC:null, storedWW:null,
+  ix:0, iy:0, iz:0, invert:false,
+  rotK:null, rotAng:0, // single-axis oblique: rotated view + angle (rad); null = orthogonal
+  labels:{XY:"AXIAL", XZ:"CORONAL", YZ:"SAGITTAL"},
+  meta:"", seriesList:[], curIdx:null, measure:false, trueScale:true, neuro:true
+};
+
+const $ = id => document.getElementById(id);
+const status = m => { $("status").textContent = m || ""; };
+
+/* ============================================================
+   Loading & parsing
+   ============================================================ */
+const TS = {
+  ILE:"1.2.840.10008.1.2", ELE:"1.2.840.10008.1.2.1", EBE:"1.2.840.10008.1.2.2",
+  RLE:"1.2.840.10008.1.2.5",
+  JPB:"1.2.840.10008.1.2.4.50", JPE:"1.2.840.10008.1.2.4.51",
+  JPLL:"1.2.840.10008.1.2.4.57", JPLLSV1:"1.2.840.10008.1.2.4.70",
+  JLS:"1.2.840.10008.1.2.4.80", JLSN:"1.2.840.10008.1.2.4.81",
+  J2KL:"1.2.840.10008.1.2.4.90", J2K:"1.2.840.10008.1.2.4.91"
+};
+const TS_NAME = {
+  [TS.ILE]:"Implicit VR Little Endian", [TS.ELE]:"Explicit VR Little Endian", [TS.EBE]:"Explicit VR Big Endian",
+  [TS.RLE]:"RLE Lossless", [TS.JPB]:"JPEG Baseline (8-bit)", [TS.JPE]:"JPEG Extended (12-bit)",
+  [TS.JPLL]:"JPEG Lossless P14", [TS.JPLLSV1]:"JPEG Lossless SV1",
+  [TS.JLS]:"JPEG-LS Lossless", [TS.JLSN]:"JPEG-LS Near-lossless",
+  [TS.J2KL]:"JPEG 2000 Lossless", [TS.J2K]:"JPEG 2000"
+};
+const UNCOMPRESSED = new Set([TS.ILE, TS.ELE, TS.EBE]);
+const SUPPORTED_TS = new Set([...UNCOMPRESSED, TS.RLE, TS.JPB,
+  TS.JPLL, TS.JPLLSV1, TS.JLS, TS.JLSN, TS.J2KL, TS.J2K]);
+
+/* ── compressed-frame decoders (all vendored in lib/, fully offline) ── */
+const b64bytes = b64 => {
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+};
+let _oj = null, _cl = null; // WASM modules, instantiated lazily on first use
+const getOpenJPEG = () => (_oj ??= OpenJPEGWASM({ wasmBinary: b64bytes(OPENJPEG_WASM_B64) }));
+const getCharLS   = () => (_cl ??= CharLSWASM({ wasmBinary: b64bytes(CHARLS_WASM_B64) }));
+
+/* one frame's encoded bytes out of encapsulated pixel data */
+function frameData(ds, frame, nframes){
+  const pe = ds.elements.x7fe00010;
+  if (pe.basicOffsetTable && pe.basicOffsetTable.length)
+    return dicomParser.readEncapsulatedImageFrame(ds, pe, frame, pe.basicOffsetTable);
+  if (nframes === 1)
+    return dicomParser.readEncapsulatedPixelDataFromFragments(ds, pe, 0, pe.fragments.length);
+  if (pe.fragments.length === nframes)
+    return dicomParser.readEncapsulatedPixelDataFromFragments(ds, pe, frame, 1);
+  throw new Error("Multi-frame with fragmented frames and no offset table — unsupported.");
+}
+
+/* DICOM RLE (PackBits byte planes, MSB plane first) → little-endian interleaved bytes */
+function decodeRLE(bytes, npx, bps, samples){
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const nSeg = dv.getUint32(0, true);
+  const out = new Uint8Array(npx*bps*samples);
+  const plane = new Uint8Array(npx);
+  for (let s = 0; s < nSeg; s++){
+    const start = dv.getUint32(4 + s*4, true);
+    const end = s + 1 < nSeg ? dv.getUint32(4 + (s+1)*4, true) : bytes.length;
+    let i = start, o = 0;
+    while (i < end && o < npx){
+      const n = bytes[i++] << 24 >> 24;
+      if (n >= 0){ for (let j = 0; j <= n && i < end; j++) plane[o++] = bytes[i++]; }
+      else if (n !== -128){ const v = bytes[i++]; for (let j = 0; j < 1 - n; j++) plane[o++] = v; }
+    }
+    const sampleI = (s/bps)|0, byteI = s % bps; // byteI 0 = most significant
+    for (let px = 0; px < npx; px++) out[(px*samples + sampleI)*bps + (bps-1-byteI)] = plane[px];
+  }
+  return out;
+}
+
+async function decodeWASM(modPromise, cls, data, lib){
+  const mod = await modPromise.catch(() => { throw new Error(`${lib} decoder failed to initialize — lib/ files missing?`); });
+  const dec = new mod[cls]();
+  try {
+    dec.getEncodedBuffer(data.length).set(data);
+    dec.decode();
+    const out = dec.getDecodedBuffer();
+    const copy = new Uint8Array(out.length); // heap view — copy out before delete
+    copy.set(out);
+    return copy;
+  } finally { dec.delete(); }
+}
+
+/* 8-bit JPEG baseline via the browser's own decoder */
+async function decodeJPB(data){
+  const bmp = await createImageBitmap(new Blob([data], { type:"image/jpeg" }));
+  const cv = document.createElement("canvas");
+  cv.width = bmp.width; cv.height = bmp.height;
+  const ctx = cv.getContext("2d", { willReadFrequently:true });
+  ctx.drawImage(bmp, 0, 0);
+  const d = ctx.getImageData(0, 0, bmp.width, bmp.height).data;
+  bmp.close();
+  return d; // RGBA
+}
+
+const clamp255 = v => v < 0 ? 0 : v > 255 ? 255 : v|0;
+function ybrToRGB(le, n){ // YBR_FULL, interleaved
+  const o = new Uint8Array(n*3);
+  for (let i = 0; i < n; i++){
+    const y = le[i*3], cb = le[i*3+1]-128, cr = le[i*3+2]-128;
+    o[i*3] = clamp255(y + 1.402*cr);
+    o[i*3+1] = clamp255(y - 0.344136*cb - 0.714136*cr);
+    o[i*3+2] = clamp255(y + 1.772*cb);
+  }
+  return o;
+}
+function ybr422ToRGB(le, n){ // Y0 Y1 Cb Cr per horizontal pixel pair
+  const o = new Uint8Array(n*3);
+  for (let p = 0, i = 0; p < n; p += 2, i += 4){
+    const cb = le[i+2]-128, cr = le[i+3]-128;
+    for (const [pp, y] of [[p, le[i]], [p+1, le[i+1]]]){
+      o[pp*3] = clamp255(y + 1.402*cr);
+      o[pp*3+1] = clamp255(y - 0.344136*cb - 0.714136*cr);
+      o[pp*3+2] = clamp255(y + 1.772*cb);
+    }
+  }
+  return o;
+}
+
+/* typed view over little-endian bytes; copies if misaligned */
+const evenView = (u8, Ctor, n) => (u8.byteOffset % Ctor.BYTES_PER_ELEMENT === 0)
+  ? new Ctor(u8.buffer, u8.byteOffset, n)
+  : new Ctor(u8.slice(0, n*Ctor.BYTES_PER_ELEMENT).buffer, 0, n);
+
+/* Decode one slice/frame → { gray: TypedArray(n) } or { rgb: Uint8Array(3n) } */
+async function decodeFrame(s, ts, m){
+  const ds = s.ds, pe = ds.elements.x7fe00010;
+  const n = m.rows*m.cols, bps = m.bitsAlloc >> 3;
+  let le, isRGBAlready = false;
+  if (UNCOMPRESSED.has(ts)){
+    const fb = m.photo === "YBR_FULL_422" ? n*2 : n*bps*m.samples;
+    le = new Uint8Array(ds.byteArray.buffer, ds.byteArray.byteOffset + pe.dataOffset + s.frame*fb, fb);
+    if (ts === TS.EBE && bps === 2){
+      const c = new Uint8Array(fb);
+      for (let i = 0; i < fb; i += 2){ c[i] = le[i+1]; c[i+1] = le[i]; }
+      le = c;
+    }
+    if (m.planar === 1 && m.samples === 3){ // planar RRR…GGG…BBB → interleaved
+      const c = new Uint8Array(n*3);
+      for (let i = 0; i < n; i++){ c[i*3] = le[i]; c[i*3+1] = le[n+i]; c[i*3+2] = le[2*n+i]; }
+      le = c;
+    }
+  } else if (ts === TS.RLE){
+    le = decodeRLE(frameData(ds, s.frame, s.nframes), n, bps, m.samples);
+  } else if (ts === TS.JPLL || ts === TS.JPLLSV1){
+    if (typeof jpegLossless === "undefined") throw new Error("JPEG Lossless decoder missing — lib/jpeg-lossless.js must sit next to this page.");
+    const data = frameData(ds, s.frame, s.nframes);
+    const out = new jpegLossless.Decoder().decode(data.buffer, data.byteOffset, data.byteLength);
+    le = new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+  } else if (ts === TS.JLS || ts === TS.JLSN){
+    le = await decodeWASM(getCharLS(), "JpegLSDecoder", frameData(ds, s.frame, s.nframes), "JPEG-LS");
+  } else if (ts === TS.J2KL || ts === TS.J2K){
+    le = await decodeWASM(getOpenJPEG(), "J2KDecoder", frameData(ds, s.frame, s.nframes), "JPEG 2000");
+    isRGBAlready = true; // OpenJPEG applies the inverse component transform itself
+  } else if (ts === TS.JPB){
+    if (m.bitsAlloc !== 8) throw new Error("12-bit lossy JPEG (Extended) is not supported.");
+    const rgba = await decodeJPB(frameData(ds, s.frame, s.nframes));
+    if (m.samples === 3){
+      const rgb = new Uint8Array(n*3);
+      for (let i = 0; i < n; i++){ rgb[i*3] = rgba[i*4]; rgb[i*3+1] = rgba[i*4+1]; rgb[i*3+2] = rgba[i*4+2]; }
+      return { rgb };
+    }
+    const g = new Uint8Array(n);
+    for (let i = 0; i < n; i++) g[i] = rgba[i*4];
+    return { gray: g };
+  } else throw new Error(`Transfer syntax ${ts} is not supported.`);
+
+  if (m.samples === 3){
+    if (m.photo === "YBR_FULL_422" && UNCOMPRESSED.has(ts)) return { rgb: ybr422ToRGB(le, n) };
+    if (m.photo === "YBR_FULL" && !isRGBAlready) return { rgb: ybrToRGB(le, n) };
+    return { rgb: le.length >= n*3 ? le : (() => { throw new Error("Color frame shorter than expected."); })() };
+  }
+  if (bps === 1) return { gray: m.signed ? evenView(le, Int8Array, n) : le.subarray(0, n) };
+  return { gray: evenView(le, m.signed ? Int16Array : Uint16Array, n) };
+}
+
+$("pickFiles").onclick = () => $("fFiles").click();
+$("pickDir").onclick   = () => $("fDir").click();
+$("fFiles").onchange = e => loadFiles([...e.target.files]);
+$("fDir").onchange   = e => loadFiles([...e.target.files]);
+/* The load screen must never trap the user away from a loaded study */
+const showDrop = () => { $("backView").hidden = !S.vol; $("drop").classList.remove("hide"); };
+const hideDrop = () => { $("drop").classList.add("hide"); status(""); };
+$("reload").onclick = () => { status(""); showDrop(); };
+$("backView").onclick = hideDrop;
+$("drop").addEventListener("click", e => { if (e.target.id === "drop" && S.vol) hideDrop(); });
+
+const box = $("dropbox");
+addEventListener("dragover", e => { e.preventDefault(); box.classList.add("over"); });
+addEventListener("dragleave", () => box.classList.remove("over"));
+addEventListener("drop", async e => {
+  e.preventDefault(); box.classList.remove("over");
+  const files = [];
+  const walk = async entry => {
+    if (entry.isFile) { files.push(await new Promise((res, rej) => entry.file(res, rej))); }
+    else if (entry.isDirectory) {
+      const rd = entry.createReader();
+      let batch;
+      do { batch = await new Promise((res, rej) => rd.readEntries(res, rej));
+           for (const en of batch) await walk(en); } while (batch.length);
+    }
+  };
+  if (e.dataTransfer.items && e.dataTransfer.items[0]?.webkitGetAsEntry) {
+    for (const it of [...e.dataTransfer.items]) { const en = it.webkitGetAsEntry(); if (en) await walk(en); }
+  } else files.push(...e.dataTransfer.files);
+  loadFiles(files);
+});
+
+async function loadFiles(files){
+  try{
+    if (!files.length) return;
+    if (typeof dicomParser === "undefined")
+      throw new Error("DICOM parser library not found — lib/dicomParser.min.js must sit next to this page.");
+    status(`Reading ${files.length} file(s)…`);
+    const slices = [];
+    let unreadable = 0, noPixel = 0, done = 0;
+    const bar = r => "█".repeat(Math.round(r*24)).padEnd(24, "░");
+    for (const f of files){
+      if (++done % 6 === 0 || done === files.length)
+        status(`READING ${bar(done/files.length)} ${done}/${files.length}`);
+      if (/\.(txt|json|html|xml|jpg|jpeg|png|pdf|zip|js|css)$/i.test(f.name)) continue;
+      let ds;
+      try { ds = dicomParser.parseDicom(new Uint8Array(await f.arrayBuffer())); }
+      catch { unreadable++; continue; } // not DICOM (reports, hidden files…)
+      if (!ds.elements.x7fe00010) { noPixel++; continue; } // DICOMDIR, SR…
+      // multiframe: expand into per-frame slices sharing one dataset
+      const nf = parseInt(ds.string("x00280008")) || 1;
+      for (let fr = 0; fr < nf; fr++) slices.push({ ds, name: f.name, frame: fr, nframes: nf });
+    }
+    if (!slices.length)
+      throw new Error(`No DICOM image files in the selection (${unreadable} unreadable, ${noPixel} without pixel data).`);
+
+    // Group by SeriesInstanceUID + dimensions. A series that holds several
+    // angled slabs (disc-angled axials sharing one UID) stays ONE series —
+    // the per-slice angle variation is surfaced in the UI instead of split.
+    const groups = new Map();
+    for (const s of slices){
+      const uid = s.ds.string("x0020000e") || "unknown";
+      const rows = s.ds.uint16("x00280010"), cols = s.ds.uint16("x00280011");
+      const key = `${uid}|${rows}x${cols}`;
+      (groups.get(key) || groups.set(key, []).get(key)).push(s);
+    }
+    const sliceTiltOf = s => {
+      const v = (sliceStr(s, "x00200037") || "1\\0\\0\\0\\1\\0").split("\\").map(Number);
+      const r = v.slice(0,3), c = v.slice(3,6);
+      const n = [ r[1]*c[2]-r[2]*c[1], r[2]*c[0]-r[0]*c[2], r[0]*c[1]-r[1]*c[0] ];
+      return { tilt: Math.max(devDeg(r), devDeg(c), devDeg(n)), key: v.map(x => x.toFixed(2)).join(",") };
+    };
+    S.seriesList = [...groups.values()].map(sl => {
+      const d = sl[0].ds;
+      const ang = sl.map(sliceTiltOf);
+      const tilts = ang.map(a => a.tilt);
+      return {
+        slices: sl,
+        num: parseInt(d.string("x00200011")) || 0,
+        desc: (d.string("x0008103e") || d.string("x00081030") || "series").trim(),
+        ts: d.string("x00020010") || "1.2.840.10008.1.2",
+        modality: (d.string("x00080060") || "").trim().toUpperCase(),
+        color: (d.uint16("x00280002") || 1) >= 3, // SamplesPerPixel — RGB/YBR objects
+        tiltMin: Math.min(...tilts), tiltMax: Math.max(...tilts),
+        slabs: new Set(ang.map(a => a.key)).size
+      };
+    }).sort((a, b) => a.num - b.num);
+    S.seriesList.forEach(s => s.tag = "S" + s.num);
+
+    const sel = $("seriesSel");
+    sel.innerHTML = "";
+    S.seriesList.forEach((s, i) => {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = `${s.tag} · ${s.desc} · ${s.slices.length} slice${s.slices.length > 1 ? "s" : ""}`
+        + (s.tiltMax >= 1
+            ? (s.slabs > 1 ? ` · ∠${fmtDeg(s.tiltMin)}–${fmtDeg(s.tiltMax)} (${s.slabs} angles)` : ` · ∠${fmtDeg(s.tiltMax)}`)
+            : "");
+      sel.appendChild(o);
+    });
+    sel.hidden = S.seriesList.length < 2;
+
+    // Default MPR volume: the series that REFORMATS best. Most slices alone is a
+    // trap — it favours thick multi-angle stacks (e.g. a 37-slice disc-angled
+    // axial) whose coronal/sagittal reformats come out sheared and 1-row-per-slice.
+    // Prefer a single-geometry stack (slabs === 1, no shear) with enough slices to
+    // reformat at all; fall back to most-slices overall if none qualify.
+    const reformatScore = s => s.slices.length < 2 ? -1 : (s.slabs > 1 ? 0 : 1e6) + s.slices.length;
+    let def = 0;
+    S.seriesList.forEach((s, i) => { if (reformatScore(s) > reformatScore(S.seriesList[def])) def = i; });
+    sel.value = def;
+    await loadSeries(def);
+  } catch(err){
+    console.error(err);
+    status(err.message || String(err));
+  }
+}
+
+async function loadSeries(idx){
+  try{
+    const entry = S.seriesList[idx];
+    if (!SUPPORTED_TS.has(entry.ts))
+      throw new Error(`${entry.tag} uses transfer syntax ${TS_NAME[entry.ts] || entry.ts}, which is not supported.\nSupported: uncompressed, RLE, JPEG Lossless, JPEG-LS, JPEG 2000, 8-bit JPEG baseline.`);
+    await buildVolume(entry.slices.slice(), entry.ts);
+    for (const k in views) views[k].ruler = null;
+    $("invert").classList.toggle("active", S.invert);
+    initViews();
+    S.curIdx = idx;
+    $("drop").classList.add("hide");
+    $("wl").classList.add("show");
+    if (STUDY.active){ destroyStudyCells(); buildStudyCells(); }
+    if (!$("infoPanel").hidden) renderInfo();
+    status("");
+    // Honor the chosen layout on the first study loaded (default: Acquired series)
+    if (!S.layoutInit){ S.layoutInit = true; const m = $("layoutSel").value; if (m !== "mpr") setLayout(m); }
+  } catch(err){
+    console.error(err);
+    status(err.message || String(err));
+    // keep the working volume: revert the dropdown, leave a way back (Esc / ← Back)
+    if (S.vol && S.curIdx != null) $("seriesSel").value = S.curIdx;
+    showDrop();
+  }
+}
+$("seriesSel").onchange = e => loadSeries(+e.target.value);
+
+/* Per-slice tag read that understands enhanced multiframe: geometry/rescale
+   tags live in per-frame (x52009230) or shared (x52009229) functional groups,
+   inside the sequence FG_OF maps them to; classic files read the tag directly. */
+const FG_OF = {
+  x00200032:"x00209113", x00200037:"x00209116",                    // plane position / orientation
+  x00280030:"x00289110", x00180050:"x00289110", x00180088:"x00289110", // pixel measures
+  x00281053:"x00289145", x00281052:"x00289145",                    // pixel value transformation
+  x00281050:"x00289132", x00281051:"x00289132"                     // frame VOI LUT
+};
+function sliceStr(s, tag){
+  if (s.nframes > 1 && FG_OF[tag]){
+    for (const fgTag of ["x52009230", "x52009229"]){
+      const item = s.ds.elements[fgTag]?.items?.[fgTag === "x52009230" ? s.frame : 0];
+      const v = item?.dataSet?.elements?.[FG_OF[tag]]?.items?.[0]?.dataSet?.string(tag);
+      if (v != null) return v;
+    }
+  }
+  return s.ds.string(tag);
+}
+
+/* Patient-axis helpers (DICOM LPS: +X=Left, +Y=Posterior, +Z=Superior) */
+const axisOf = v => { const a = v.map(Math.abs); return a.indexOf(Math.max(...a)); };
+const planeOf = v => ["SAGITTAL","CORONAL","AXIAL"][axisOf(v)];
+const dirLetter = v => { const i = axisOf(v); return ["RL","AP","IS"][i][v[i] >= 0 ? 1 : 0]; };
+// Display L/R convention. Native geometry puts patient-Left on the viewer's right
+// (radiological). Neurological convention (S.neuro, the default) mirrors any view
+// whose horizontal screen axis is left/right so patient-Left sits on the left —
+// the less confusing "mirror-like" view. Views without an L/R horizontal axis
+// (e.g. sagittal, which runs A–P) are never flipped.
+const isLR = hv => axisOf(hv) === 0;           // horizontal screen axis is patient X (L/R)
+const convFlip = hv => S.neuro && isLR(hv);    // should this view be mirrored for the convention?
+const PLANE_COLOR = { AXIAL:"#ff5f5f", CORONAL:"#5fe884", SAGITTAL:"#ffd75f" };
+const COLOR_3D = "#ff87d7";
+const esc = s => s.replace(/[<>&"]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[ch])); // also quotes — used inside title="…"
+
+/* Obliquity: worst deviation of the acquisition axes from the nearest patient
+   axis (0° = squarely axial/coronal/sagittal). Shown as a badge + tilted chip. */
+const devDeg = v => { const a = v.map(Math.abs); return Math.acos(Math.min(1, Math.max(...a)/(Math.hypot(...v) || 1)))*180/Math.PI; };
+const tiltOf = V => Math.max(devDeg(V.rowD), devDeg(V.colD), devDeg(V.nrm));
+const fmtDeg = d => (d < 10 ? d.toFixed(1) : Math.round(d)) + "°";
+const oblBadge = d => d >= 1 ? `<em class="obl" title="acquired ${fmtDeg(d)} off the patient axes">∠${fmtDeg(d)}</em>` : "";
+const tiltChip = d => `<i style="transform:rotate(${Math.min(45, d)}deg)"></i>`;
+/* obliquity → colour: green (square) · yellow · orange · red (steep) */
+const tiltColor = d => d < 1 ? "var(--green)" : d < 8 ? "var(--yellow)" : d < 18 ? "var(--orange)" : "var(--red)";
+/* angle-profile strip: one segment per angled slab, sized by its slice count */
+function buildSlabBar(slabSegs, nz){
+  const el = document.createElement("div");
+  el.className = "slabbar";
+  el.innerHTML = slabSegs.map(s =>
+    `<span style="flex:${s.count};background:${tiltColor(s.tilt)}" title="${s.count} slice${s.count>1?"s":""} · ∠${fmtDeg(s.tilt)}"></span>`).join("")
+    + `<i class="cur"></i>`;
+  return { el, cur: el.querySelector(".cur") };
+}
+
+/* Patient-space (LPS mm) ↔ voxel mapping, for linking series with different geometry */
+const v3sub = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const v3dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+function voxToPat(V, i, j, k){
+  if (V.sliceOrigin){ // multi-slab: use slice k's actual origin & in-plane axes
+    const kk = Math.max(0, Math.min(V.nz-1, Math.round(k)));
+    const o = V.sliceOrigin[kk], r = V.sliceRowD[kk], c = V.sliceColD[kk];
+    return [0,1,2].map(a => o[a] + r[a]*V.sx*i + c[a]*V.sy*j);
+  }
+  const { origin:o, rowD:r, colD:c, nrm:n, sx, sy, sz } = V;
+  return [0,1,2].map(a => o[a] + r[a]*sx*i + c[a]*sy*j + n[a]*sz*k);
+}
+function patToVox(V, P){
+  if (V.sliceOrigin){ // multi-slab: pick the nearest slice plane, project in it
+    let bestK = 0, bestD = Infinity;
+    for (let k=0;k<V.nz;k++){
+      const o = V.sliceOrigin[k], n = V.sliceNrm[k];
+      const d = Math.abs((P[0]-o[0])*n[0] + (P[1]-o[1])*n[1] + (P[2]-o[2])*n[2]);
+      if (d < bestD){ bestD = d; bestK = k; }
+    }
+    const o = V.sliceOrigin[bestK], r = V.sliceRowD[bestK], c = V.sliceColD[bestK];
+    const dx = P[0]-o[0], dy = P[1]-o[1], dz = P[2]-o[2];
+    return [ (dx*r[0]+dy*r[1]+dz*r[2])/V.sx, (dx*c[0]+dy*c[1]+dz*c[2])/V.sy, bestK ];
+  }
+  const d = v3sub(P, V.origin);
+  return [ v3dot(d, V.rowD)/V.sx, v3dot(d, V.colD)/V.sy, v3dot(d, V.nrm)/V.sz ];
+}
+
+/* Decode one series into a volume object (does not touch global state).
+   Handles classic + enhanced multiframe slices (sliceStr), all SUPPORTED_TS
+   codecs (decodeFrame), and color: samples==3 additionally fills an RGBA
+   volume volC while vol keeps the luminance for windowing/3D/probing. */
+async function decodeVolume(series, ts){
+  const s0 = series[0], d0 = s0.ds;
+  const rows = d0.uint16("x00280010"), cols = d0.uint16("x00280011");
+  const bitsAlloc = d0.uint16("x00280100") || 16;
+  const signed = (d0.uint16("x00280103") || 0) === 1;
+  const samples = d0.uint16("x00280002") || 1;
+  const planar = d0.uint16("x00280006") || 0;
+  const photo = (d0.string("x00280004") || "MONOCHROME2").trim();
+  const rgb = samples === 3;
+  const slope = parseFloat(sliceStr(s0, "x00281053")) || 1;
+  const intercept = parseFloat(sliceStr(s0, "x00281052")) || 0;
+  const wcs = sliceStr(s0, "x00281050"), wws = sliceStr(s0, "x00281051");
+
+  // Geometry
+  const ps = (sliceStr(s0, "x00280030") || "1\\1").split("\\").map(Number);
+  const sy = ps[0] || 1, sx = ps[1] || 1;
+  const iop = (sliceStr(s0, "x00200037") || "1\\0\\0\\0\\1\\0").split("\\").map(Number);
+  const rowD = iop.slice(0,3), colD = iop.slice(3,6);
+
+  // Per-slice orientation — a single series may contain several angled slabs
+  // (e.g. disc-angled axials). Record each slice's obliquity and order the whole
+  // stack along the AVERAGE normal so the slabs concatenate in anatomical order.
+  const cross = (r, c) => [ r[1]*c[2]-r[2]*c[1], r[2]*c[0]-r[0]*c[2], r[0]*c[1]-r[1]*c[0] ];
+  for (const s of series){
+    const v = (sliceStr(s, "x00200037") || "1\\0\\0\\0\\1\\0").split("\\").map(Number);
+    const r = v.slice(0,3), c = v.slice(3,6), n = cross(r, c);
+    s.rowS = r; s.colS = c; s.nrmS = n;
+    s.tiltS = Math.max(devDeg(r), devDeg(c), devDeg(n));
+    s.iopKey = v.map(x => x.toFixed(2)).join(",");
+  }
+  const nrm = (() => {
+    const n0 = series[0].nrmS, a = [0,0,0];
+    for (const s of series){ const sg = v3dot(s.nrmS, n0) < 0 ? -1 : 1; a[0]+=sg*s.nrmS[0]; a[1]+=sg*s.nrmS[1]; a[2]+=sg*s.nrmS[2]; }
+    const l = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l];
+  })();
+
+  // Sort along the average normal; fallback InstanceNumber, then frame index
+  for (const s of series){
+    const ipp = sliceStr(s, "x00200032");
+    s.pos = ipp ? ipp.split("\\").map(Number).reduce((a,v,i)=>a+v*nrm[i],0) : null;
+    s.inst = parseInt(s.ds.string("x00200013")) || 0;
+  }
+  series.sort((a,b)=> (a.pos!=null && b.pos!=null) ? a.pos-b.pos : (a.inst-b.inst || a.frame-b.frame));
+
+  // through-plane spacing: median inter-slice gap (robust to jumps between slabs)
+  const gaps = [];
+  for (let i=1;i<series.length;i++) if (series[i].pos!=null && series[i-1].pos!=null) gaps.push(Math.abs(series[i].pos-series[i-1].pos));
+  gaps.sort((a,b)=>a-b);
+  let sz = gaps.length ? gaps[gaps.length>>1] : (parseFloat(sliceStr(s0, "x00180088")) || parseFloat(sliceStr(s0, "x00180050")) || 1);
+  sz = sz || 1;
+
+  // per-slice tilt (sorted order) and contiguous same-orientation slab segments
+  const sliceTilt = series.map(s => s.tiltS);
+  const slabSegs = [];
+  series.forEach((s, k) => {
+    const last = slabSegs[slabSegs.length-1];
+    if (last && last.iop === s.iopKey) last.count++;
+    else slabSegs.push({ start:k, count:1, iop:s.iopKey, tilt:s.tiltS });
+  });
+
+  // Per-slice patient geometry (sorted order). A multi-slab stack has no single
+  // rigid geometry, so cross-series localization must use each slice's actual
+  // position/orientation — otherwise a point picked in another series lands off.
+  const multiSlab = slabSegs.length > 1;
+  const sliceOrigin = multiSlab ? series.map(s => (sliceStr(s, "x00200032")||"0\\0\\0").split("\\").map(Number)) : null;
+  const sliceRowD   = multiSlab ? series.map(s => s.rowS) : null;
+  const sliceColD   = multiSlab ? series.map(s => s.colS) : null;
+  const sliceNrm    = multiSlab ? series.map(s => s.nrmS) : null;
+
+  const nx = cols, ny = rows, nz = series.length;
+  const guardMB = nx*ny*nz*(rgb ? 6 : 2) / 1048576;
+  if (guardMB > 900) throw new Error(`Volume too large for the browser (${guardMB|0} MB).`);
+  const vol = new Int16Array(nx*ny*nz);
+  const volC = rgb ? new Uint8ClampedArray(nx*ny*nz*4) : null;
+  let minV = Infinity, maxV = -Infinity;
+  const fmeta = { rows, cols, bitsAlloc, signed, samples, planar, photo };
+
+  for (let k = 0; k < nz; k++){
+    const ds = series[k].ds;
+    if (ds.uint16("x00280010") !== ny || ds.uint16("x00280011") !== nx)
+      throw new Error("Slice dimensions vary within the series.");
+    const f = await decodeFrame(series[k], ts, fmeta);
+    const n = nx*ny, base = k*n;
+    if (f.rgb){
+      const src = f.rgb;
+      for (let i=0;i<n;i++){
+        const r = src[i*3], g = src[i*3+1], b = src[i*3+2], o = (base+i)*4;
+        volC[o] = r; volC[o+1] = g; volC[o+2] = b; volC[o+3] = 255;
+        const v = (r*77 + g*150 + b*29) >> 8; // luminance drives W/L, 3D, probe
+        vol[base+i] = v; if (v<minV)minV=v; if (v>maxV)maxV=v;
+      }
+    } else {
+      const src = f.gray;
+      for (let i=0;i<n;i++){ const v = src[i]; vol[base+i] = v; if (v<minV)minV=v; if (v>maxV)maxV=v; }
+    }
+  }
+
+  const origin = (sliceStr(series[0], "x00200032") || "0\\0\\0").split("\\").map(Number);
+
+  return {
+    vol, volC, nx, ny, nz, sx, sy, sz, slope, intercept, minV, maxV,
+    rowD, colD, nrm, origin, sliceTilt, slabSegs,
+    sliceOrigin, sliceRowD, sliceColD, sliceNrm,
+    photoInvert: photo === "MONOCHROME1",
+    storedWC: wcs ? parseFloat(wcs.split("\\")[0]) : null,
+    storedWW: wws ? parseFloat(wws.split("\\")[0]) : null,
+    labels: { XY: planeOf(nrm), YZ: planeOf(rowD), XZ: planeOf(colD) }
+  };
+}
+
+async function buildVolume(series, ts){
+  const V = await decodeVolume(series, ts);
+  Object.assign(S, {
+    vol:V.vol, volC:V.volC || null, nx:V.nx, ny:V.ny, nz:V.nz, sx:V.sx, sy:V.sy, sz:V.sz,
+    slope:V.slope, intercept:V.intercept, minV:V.minV, maxV:V.maxV,
+    storedWC:V.storedWC, storedWW:V.storedWW, invert:V.photoInvert,
+    rowD:V.rowD, colD:V.colD, nrm:V.nrm, origin:V.origin, labels:V.labels,
+    sliceTilt:V.sliceTilt, slabSegs:V.slabSegs,
+    sliceOrigin:V.sliceOrigin, sliceRowD:V.sliceRowD, sliceColD:V.sliceColD, sliceNrm:V.sliceNrm,
+    ix:V.nx>>1, iy:V.ny>>1, iz:V.nz>>1,
+    rotK:null, rotAng:0 // reset oblique for the new volume
+  });
+  autoWindow();
+  const d0 = series[0].ds;
+  const pn = d0.string("x00100010") || "—";
+  const desc = d0.string("x0008103e") || d0.string("x00081030") || "";
+  S.meta = `${pn.replace(/\^/g," ").trim()} · ${desc} · ${V.nx}×${V.ny}×${V.nz} · ${S.sx.toFixed(2)}/${S.sy.toFixed(2)}/${S.sz.toFixed(2)} mm`;
+  const tmin = Math.min(...S.sliceTilt), tmax = Math.max(...S.sliceTilt);
+  const angMeta = tmax < 1 ? ""
+    : S.slabSegs.length > 1
+      ? `<span style="color:var(--orange)">∠${fmtDeg(tmin)}–${fmtDeg(tmax)} · ${S.slabSegs.length} ANGLES</span>`
+      : `<span style="color:var(--orange)">∠${fmtDeg(tmax)} OBLIQUE</span>`;
+  $("meta").innerHTML =
+    `<b>${esc(pn.replace(/\^/g," ").trim())}</b><span>${esc(desc)}</span>` +
+    `<span>${V.nx}×${V.ny}×${V.nz} vox</span>` +
+    `<span>${S.sx.toFixed(2)}/${S.sy.toFixed(2)}/${S.sz.toFixed(2)} mm</span>` +
+    angMeta;
+}
+
+/* ============================================================
+   Windowing
+   ============================================================ */
+function autoWindowOf(V){
+  // percentile window from a coarse subsample
+  const { vol } = V, step = Math.max(1, (vol.length/200000)|0);
+  const sample = [];
+  for (let i=0;i<vol.length;i+=step) sample.push(vol[i]);
+  sample.sort((a,b)=>a-b);
+  const lo = sample[(sample.length*0.02)|0], hi = sample[(sample.length*0.99)|0];
+  const v = x => x*V.slope + V.intercept;
+  return { wc: (v(lo)+v(hi))/2, ww: Math.max(1, v(hi)-v(lo)) };
+}
+const autoWindow = () => Object.assign(S, autoWindowOf(S));
+$("preset").onchange = e => {
+  const v = x => x*S.slope + S.intercept;
+  switch(e.target.value){
+    case "auto":   autoWindow(); break;
+    case "stored": if (S.storedWC!=null){ S.wc=S.storedWC; S.ww=S.storedWW||1; } else autoWindow(); break;
+    case "narrow": S.ww = Math.max(1,(v(S.maxV)-v(S.minV))*0.25); S.wc = (v(S.minV)+v(S.maxV))/2; break;
+    case "wide":   S.ww = Math.max(1, v(S.maxV)-v(S.minV)); S.wc = (v(S.minV)+v(S.maxV))/2; break;
+  }
+  drawAll(); sync3DWindow();
+};
+
+/* ============================================================
+   2D MPR views
+   ============================================================ */
+const views = {
+  XY: { c:$("cXY"), s:$("sXY"), t:$("tXY"), i:$("iXY") },
+  XZ: { c:$("cXZ"), s:$("sXZ"), t:$("tXZ"), i:$("iXZ") },
+  YZ: { c:$("cYZ"), s:$("sYZ"), t:$("tYZ"), i:$("iYZ") }
+};
+
+function initViews(){
+  spineClear(true); // the centerline lives in the previous volume's space
+  $("spineBtn").disabled = STUDY.active || !spineAvailable();
+  const { nx, ny, nz, sx, sy, sz } = S;
+  setup("XY", nx, ny, nx*sx, ny*sy, nz-1, S.iz);
+  setup("XZ", nx, nz, nx*sx, nz*sz, ny-1, S.iy);
+  setup("YZ", ny, nz, ny*sy, nz*sz, nx-1, S.ix);
+  const c3 = $("v3d").parentElement;
+  c3.dataset.aspect = 1.3; // volume render — used only to bias the auto-grid split
+  c3.style.setProperty("--pc", COLOR_3D);
+  layoutCells();
+  drawAll();
+  init3D();
+}
+/* Center-slice detent for a slice scrollbar: a tick at the geometric middle
+   (mid-sagittal / mid-coronal / mid-axial slice) plus a drag-snap to it. Wheel
+   scrolling is intentionally left un-snapped so single-slice stepping stays free. */
+function midTick(cell, slider){
+  const old = cell.querySelector(".midtick"); if (old) old.remove();
+  if (+slider.max < 2 || slider.style.display === "none") return; // no stack / hidden
+  const t = document.createElement("i");
+  t.className = "midtick " + (slider.classList.contains("h") ? "h" : "v");
+  if (slider.style.accentColor) t.style.background = slider.style.accentColor;
+  cell.appendChild(t);
+}
+function snapMid(slider){
+  const max = +slider.max, v = +slider.value, mid = max/2;
+  const snap = Math.max(1, Math.round((max+1)*0.05)); // ~5% of the stack, ≥1 slice
+  if (Math.abs(v - mid) <= snap){ const c = Math.round(mid); slider.value = c; return c; }
+  return v;
+}
+function setup(k, w, h, pw, ph, max, val){
+  const v = views[k], cell = v.c.parentElement;
+  v.c.width = w; v.c.height = h;
+  v.pw = pw; v.ph = ph;
+  v.c.style.aspectRatio = `${pw} / ${ph}`;
+  v.c.dataset.mmw = pw; v.c.dataset.mmh = ph; // physical extent (mm) for common-scale mode
+  cell.dataset.aspect = pw/ph;
+  v.s.max = max; v.s.value = val;
+  // XY planes are the pixel arrays as acquired; XZ/YZ are reformatted from the stack
+  const raw = k === "XY";
+  const color = PLANE_COLOR[S.labels[k]] || "#5fd7ff";
+  cell.style.setProperty("--pc", color);
+  const multi = raw && S.slabSegs && S.slabSegs.length > 1;
+  const tmax = S.sliceTilt ? Math.max(...S.sliceTilt) : (S.rowD ? tiltOf(S) : 0);
+  // acquired view of a multi-angle series gets a live badge (updates per slice)
+  const badge = multi ? `<em class="obl liveang">∠—</em>` : oblBadge(tmax);
+  v.t.innerHTML = `${tiltChip(tmax)}<span class="lbl">${S.labels[k]}</span>${badge}<em class="${raw ? "raw" : "syn"}">${raw ? "ACQUIRED" : "REFORMAT"}</em>`;
+  v.liveang = multi ? v.t.querySelector(".liveang") : null;
+  const oldBar = cell.querySelector(".slabbar"); if (oldBar) oldBar.remove();
+  v.slabCur = null;
+  if (multi){ const bar = buildSlabBar(S.slabSegs, S.nz); cell.appendChild(bar.el); v.slabCur = bar.cur; }
+  // patient directions of the screen axes, and slice-traversal direction
+  const hv = k === "YZ" ? S.colD : S.rowD;
+  const vv = k === "XY" ? S.colD : S.nrm;
+  v.mirror = convFlip(hv); // L/R convention flip for this plane
+  setMarks(cell, v.mirror ? hv.map(x => -x) : hv, vv);
+  vpApply(v.c, v);
+  const trav = k === "XY" ? S.nrm : k === "XZ" ? S.colD : S.rowD;
+  v.s.className = "slice-slider " + ("LR".includes(dirLetter(trav)) ? "h" : "v");
+  v.s.style.accentColor = color;
+  v.ctx = v.c.getContext("2d");
+  v.img = v.ctx.createImageData(w, h);
+  v.s.oninput = () => { setIndex(k, snapMid(v.s)); };
+  midTick(cell, v.s);
+  bindPointer(k);
+  bindRotate(k);
+}
+/* Rotate handle → single-axis oblique. Drag around the view centre to tilt;
+   the pivot is the crosshair — each plane re-anchors so P keeps its screen
+   position, and the orientation letters follow the tilted basis.
+   Double-click resets to orthogonal. */
+function bindRotate(k){
+  const v = views[k], h = v.c.parentElement.querySelector(".rot");
+  if (!h || h._bound) return;
+  h._bound = true;
+  const centre = () => { const r = v.c.getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]; };
+  h.addEventListener("pointerdown", e => {
+    if (S.nz < 2) return;                       // no through-dimension to tilt into
+    e.preventDefault(); e.stopPropagation();
+    h.setPointerCapture(e.pointerId); h.style.cursor = "grabbing";
+    if (!S.rotK || !OB.P){ S.rotK = k; S.rotAng = 0; obInit(); }
+    else if (S.rotK !== k){ S.rotK = k; S.rotAng = 0; obSeat(); } // one active axis at a time
+    const [cx, cy] = centre();
+    const a0 = Math.atan2(e.clientY-cy, e.clientX-cx), base = S.rotAng;
+    const marks = { XY:obMarker("XY"), XZ:obMarker("XZ"), YZ:obMarker("YZ") };
+    const mv = ev => {
+      S.rotAng = base + Math.atan2(ev.clientY-cy, ev.clientX-cx) - a0;
+      const R = rotMatrix();
+      for (const kk of ["XY","XZ","YZ"]){       // pivot each plane about the crosshair
+        const { u, v:vv } = obBasis(kk, R), [pw, ph] = planeSpacing(kk), m = marks[kk];
+        OB.O[kk] = [0,1,2].map(i => OB.P[i] - m[0]*pw*u[i] - m[1]*ph*vv[i]);
+      }
+      obMarks(); drawAll();
+    };
+    const up = () => { h.style.cursor = "grab"; h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); };
+    h.addEventListener("pointermove", mv);
+    h.addEventListener("pointerup", up);
+  });
+  h.addEventListener("dblclick", e => { e.preventDefault(); e.stopPropagation(); obExit(); drawAll(); });
+}
+function setIndex(k, val){
+  if (S.rotK && OB.P) return stepNormal(k, val - obNormIdx(k));
+  if (k==="XY") S.iz = val; else if (k==="XZ") S.iy = val; else S.ix = val;
+  drawAll();
+}
+/* Re-apply the L/R convention to every view after S.neuro flips: recompute each
+   cell's effective mirror, re-flip the canvas, and refresh the orientation letters.
+   The image/crosshair are painted in canvas pixels, so a CSS flip is enough — no
+   redraw needed. */
+function applyConvention(){
+  for (const k of ["XY","XZ","YZ"]){
+    const v = views[k];
+    if (!v || !v.c || !S.rowD) continue;
+    const hv = k === "YZ" ? S.colD : S.rowD;
+    v.mirror = convFlip(hv);
+    setMarks(v.c.parentElement, v.mirror ? hv.map(x => -x) : hv, k === "XY" ? S.colD : S.nrm);
+    vpApply(v.c, v);
+  }
+  if (S.rotK) obMarks(); // oblique: rotated basis drives the letters
+  if (SPINE.cpr && SPINE.cell) cprSetTab(SPINE.cpr.tab); // re-derive the CPR mirror/letters
+  for (const st of STUDY.cells){
+    if (!st.canvas) continue;
+    st.mirror = convFlip(st.V.rowD) !== st.userMirror;
+    setMarks(st.cell, st.mirror ? st.V.rowD.map(x => -x) : st.V.rowD, st.V.colD);
+    st.cell.querySelector(".mirror")?.classList.toggle("active", st.userMirror);
+    vpApply(st.canvas, st);
+  }
+}
+function setMarks(cell, hv, vv){
+  // orientation letters, colored like the plane each axis pierces (matches 3D gizmo)
+  const neg = u => u.map(x => -x), q = c => cell.querySelector(c);
+  const set = (sel, u) => { const el = q(sel); el.textContent = dirLetter(u); el.style.color = PLANE_COLOR[planeOf(u)] || ""; };
+  set(".om.r", hv); set(".om.l", neg(hv));
+  set(".om.b", vv); set(".om.t", neg(vv));
+}
+/* Wheel → slice steps: one per notch on click-wheels, accumulated for smooth trackpads */
+function wheelSteps(st, e){
+  const d = e.deltaMode === 1 ? e.deltaY*16 : e.deltaMode === 2 ? e.deltaY*100 : e.deltaY;
+  if (Math.abs(d) >= 80){ st.acc = 0; return Math.sign(d); }
+  st.acc = (st.acc || 0) + d;
+  if (Math.abs(st.acc) < 40) return 0;
+  const s = Math.sign(st.acc); st.acc -= s*40; return s;
+}
+/* inferno colormap table (matplotlib polynomial fit), 256×RGB */
+const INFERNO = (() => {
+  const C = [
+    [0.00021894037,0.0016510046,-0.019480898],[0.10651342,0.56395644,3.9327124],
+    [11.602493,-3.9728540,-15.942394],[-41.703996,17.436399,44.354145],
+    [77.162936,-33.402359,-81.807309],[-71.319428,32.626064,73.209520],
+    [25.131126,-12.242669,-23.070325]
+  ];
+  const t3 = new Uint8Array(768);
+  for (let i=0;i<256;i++){
+    const t = i/255;
+    for (let ch=0;ch<3;ch++){
+      let a = C[6][ch];
+      for (let p=5;p>=0;p--) a = a*t + C[p][ch];
+      t3[i*3+ch] = Math.max(0, Math.min(255, Math.round(a*255)));
+    }
+  }
+  return t3;
+})();
+function lut(){
+  const lo = S.wc - S.ww/2, inv = 255/S.ww;
+  return raw => {
+    let g = ((raw*S.slope + S.intercept) - lo) * inv;
+    g = g < 0 ? 0 : g > 255 ? 255 : g;
+    return S.invert ? 255-g : g;
+  };
+}
+const useCmap = () => $("cmapSel").value === "1";
+function pixelWriter(d){
+  if (!useCmap()) return (o,g) => { d[o]=d[o+1]=d[o+2]=g; d[o+3]=255; };
+  return (o,g) => { const q=(g|0)*3; d[o]=INFERNO[q]; d[o+1]=INFERNO[q+1]; d[o+2]=INFERNO[q+2]; d[o+3]=255; };
+}
+function drawAll(){
+  const { vol, nx, ny, nz, ix, iy, iz } = S;
+  if (!vol) return;
+  const f = lut(), plane = nx*ny;
+  const ob = !!(S.rotK && nz > 1 && OB.P); // oblique plane state active (null = fast orthogonal)
+  // crosshair screen positions: projections of P while tilted, the integer indices otherwise
+  const M = ob ? { XY:obMarker("XY"), XZ:obMarker("XZ"), YZ:obMarker("YZ") }
+               : { XY:[ix,iy], XZ:[ix,iz], YZ:[iy,iz] };
+
+  const C = S.volC; // color volume (RGBA) — shown as-is, W/L applies to mono only
+  // XY (fix z)
+  { const { img, ctx, c } = views.XY, base = iz*plane;
+    if (ob) fillOblique("XY");
+    else if (C) img.data.set(C.subarray(base*4, (base+plane)*4));
+    else { const put = pixelWriter(img.data); for (let i=0;i<plane;i++) put(i*4, f(vol[base+i])); }
+    ctx.putImageData(img,0,0); cross(ctx, c, M.XY[0], M.XY[1], "XY"); ruler("XY"); }
+  // XZ (fix y)
+  { const { img, ctx, c } = views.XZ;
+    if (ob) fillOblique("XZ");
+    else if (C){ const d = img.data;
+      for (let z=0;z<nz;z++){ const row=(z*plane+iy*nx)*4;
+        for (let x=0;x<nx;x++){ const di=(z*nx+x)*4, si=row+x*4; d[di]=C[si]; d[di+1]=C[si+1]; d[di+2]=C[si+2]; d[di+3]=255; } } }
+    else { const put = pixelWriter(img.data);
+      for (let z=0;z<nz;z++){ const row=z*plane+iy*nx;
+        for (let x=0;x<nx;x++) put((z*nx+x)*4, f(vol[row+x])); } }
+    ctx.putImageData(img,0,0); cross(ctx, c, M.XZ[0], M.XZ[1], "XZ"); ruler("XZ"); }
+  // YZ (fix x)
+  { const { img, ctx, c } = views.YZ;
+    if (ob) fillOblique("YZ");
+    else if (C){ const d = img.data;
+      for (let z=0;z<nz;z++){ const base4=(z*plane+ix)*4;
+        for (let y=0;y<ny;y++){ const di=(z*ny+y)*4, si=base4+y*nx*4; d[di]=C[si]; d[di+1]=C[si+1]; d[di+2]=C[si+2]; d[di+3]=255; } } }
+    else { const put = pixelWriter(img.data);
+      for (let z=0;z<nz;z++){ const base=z*plane+ix;
+        for (let y=0;y<ny;y++) put((z*ny+y)*4, f(vol[base+y*nx])); } }
+    ctx.putImageData(img,0,0); cross(ctx, c, M.YZ[0], M.YZ[1], "YZ"); ruler("YZ"); }
+
+  if (SPINE.line || SPINE.seeds.length) for (const kk of ["XY","XZ","YZ"]) spineOverlay(kk);
+
+  // through-plane positions: along the tilted normals while oblique
+  const zi = ob ? clamp(obNormIdx("XY"), nz-1) : iz,
+        yi = ob ? clamp(obNormIdx("XZ"), ny-1) : iy,
+        xi = ob ? clamp(obNormIdx("YZ"), nx-1) : ix;
+  views.XY.s.value = zi; views.XZ.s.value = yi; views.YZ.s.value = xi;
+  const px = (a,b) => `px ${a.toFixed(2)}×${b.toFixed(2)} mm`;
+  const multi = S.slabSegs && S.slabSegs.length > 1;
+  views.XY.i.textContent = `z ${zi+1}/${nz} · ${px(S.sx,S.sy)}` + (multi ? ` · ∠${fmtDeg(S.sliceTilt[iz]||0)}` : "");
+  views.XZ.i.textContent = `y ${yi+1}/${ny} · ${px(S.sx,S.sz)}`;
+  views.YZ.i.textContent = `x ${xi+1}/${nx} · ${px(S.sy,S.sz)}`;
+  if (views.XY.liveang){
+    const t = S.sliceTilt[iz] || 0;
+    views.XY.liveang.textContent = `∠${fmtDeg(t)}`;
+    views.XY.liveang.style.color = views.XY.liveang.style.borderColor = tiltColor(t);
+  }
+  if (views.XY.slabCur && nz > 1) views.XY.slabCur.style.left = (iz/(nz-1)*100) + "%";
+  if (ob){ const deg = fmtDeg(S.rotAng*180/Math.PI); // oblique badge on the rotated view
+    views[S.rotK].i.textContent += ` · ⟳${deg} oblique`; }
+  for (const kk of ["XY","XZ","YZ"]) views[kk].c.parentElement.classList.toggle("rolled", ob && S.rotK===kk);
+  $("wlv").textContent = `${Math.round(S.wc)} / ${Math.round(S.ww)}`;
+  drawColorbar();
+  updateInfoLive();
+  if (SPINE.cpr) cprDraw();
+  if (R3) R3.syncCrosshair();
+}
+/* Crosshair lines carry the color of the view they position (Slicer-style linkage) */
+const CROSS_LINK = { XY:["YZ","XZ"], XZ:["YZ","XY"], YZ:["XZ","XY"] };
+function cross(ctx, c, px, py, k){
+  const [vk, hk] = CROSS_LINK[k];
+  ctx.save();
+  ctx.lineWidth = Math.max(1, c.width/500); ctx.globalAlpha = .55;
+  ctx.strokeStyle = PLANE_COLOR[S.labels[vk]] || "#5fd7ff";
+  ctx.beginPath(); ctx.moveTo(px+.5,0); ctx.lineTo(px+.5,c.height); ctx.stroke();
+  ctx.strokeStyle = PLANE_COLOR[S.labels[hk]] || "#5fd7ff";
+  ctx.beginPath(); ctx.moveTo(0,py+.5); ctx.lineTo(c.width,py+.5); ctx.stroke();
+  ctx.restore();
+}
+/* ============================================================
+   Single-axis oblique MPR — plane-state architecture.
+   While tilted (S.rotK set), the three views are true planes in
+   millimetre space: a shared world crosshair OB.P plus a per-view
+   plane origin OB.O[k], spanned by a basis rotated S.rotAng about
+   the tilted view's normal. Every interaction maps through this
+   state — clicks re-seat the other planes along their normals
+   (a pure slice change, so nothing jumps in-plane), scrolling
+   walks P along the view's true normal, rotation pivots each
+   plane about the crosshair, and the probe/crosshair project
+   through the basis. The fast integer orthogonal path in
+   drawAll() runs unchanged whenever S.rotK is null.
+   ============================================================ */
+const NORMAL_AXIS = { XY:"z", XZ:"y", YZ:"x" };
+const NORMAL_STEP = { XY:"sz", XZ:"sy", YZ:"sx" };  // through-plane spacing per view
+const OB = { P:null, O:null }; // world crosshair + plane origins (mm), live while tilted
+function rotMatrix(){
+  if (!S.rotK) return [1,0,0, 0,1,0, 0,0,1];
+  const c = Math.cos(S.rotAng), s = Math.sin(S.rotAng);
+  const ax = NORMAL_AXIS[S.rotK];
+  if (ax === "z") return [c,-s,0,  s,c,0,  0,0,1];
+  if (ax === "y") return [c,0,s,   0,1,0,  -s,0,c];
+  return               [1,0,0,  0,c,-s,  0,s,c];   // x
+}
+const dot3 = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function obBasis(k, R){          // unit mm vectors: in-plane u,v + normal n
+  const col = i => [R[i], R[3+i], R[6+i]];
+  return k==="XY" ? { u:col(0), v:col(1), n:col(2) }
+       : k==="XZ" ? { u:col(0), v:col(2), n:col(1) }
+                  : { u:col(1), v:col(2), n:col(0) };
+}
+function obInit(){               // enter oblique from the integer ortho crosshair
+  OB.P = [S.ix*S.sx, S.iy*S.sy, S.iz*S.sz];
+  obSeat();
+}
+function obSeat(){               // canonical plane origins for the current basis
+  const R = rotMatrix();
+  const C = [(S.nx-1)/2*S.sx, (S.ny-1)/2*S.sy, (S.nz-1)/2*S.sz];
+  OB.O = {};
+  for (const k of ["XY","XZ","YZ"]){
+    const { u, v, n } = obBasis(k, R);
+    const [pw, ph] = planeSpacing(k), cv = views[k].c;
+    const t = dot3([OB.P[0]-C[0], OB.P[1]-C[1], OB.P[2]-C[2]], n);
+    OB.O[k] = [0,1,2].map(i => C[i] + t*n[i] - (cv.width-1)/2*pw*u[i] - (cv.height-1)/2*ph*v[i]);
+  }
+}
+function obReseat(){             // slide each plane along its own normal through P
+  const R = rotMatrix();
+  for (const k of ["XY","XZ","YZ"]){
+    const { n } = obBasis(k, R), O = OB.O[k];
+    const t = dot3([OB.P[0]-O[0], OB.P[1]-O[1], OB.P[2]-O[2]], n);
+    O[0] += t*n[0]; O[1] += t*n[1]; O[2] += t*n[2];
+  }
+}
+function obMarker(k){            // crosshair screen position in view k
+  const { u, v } = obBasis(k, rotMatrix()), O = OB.O[k];
+  const d = [OB.P[0]-O[0], OB.P[1]-O[1], OB.P[2]-O[2]], [pw, ph] = planeSpacing(k);
+  return [dot3(d,u)/pw, dot3(d,v)/ph];
+}
+function obWorld(k, p, q){       // screen pixel of view k → world mm
+  const { u, v } = obBasis(k, rotMatrix()), O = OB.O[k], [pw, ph] = planeSpacing(k);
+  return [ O[0]+p*pw*u[0]+q*ph*v[0], O[1]+p*pw*u[1]+q*ph*v[1], O[2]+p*pw*u[2]+q*ph*v[2] ];
+}
+function obClampP(){
+  OB.P[0] = Math.min((S.nx-1)*S.sx, Math.max(0, OB.P[0]));
+  OB.P[1] = Math.min((S.ny-1)*S.sy, Math.max(0, OB.P[1]));
+  OB.P[2] = Math.min((S.nz-1)*S.sz, Math.max(0, OB.P[2]));
+}
+function obSyncIdx(){            // mirror P into the integer crosshair (3D, study, info)
+  S.ix = clamp(Math.round(OB.P[0]/S.sx), S.nx-1);
+  S.iy = clamp(Math.round(OB.P[1]/S.sy), S.ny-1);
+  S.iz = clamp(Math.round(OB.P[2]/S.sz), S.nz-1);
+}
+function obMoveP(dm){            // move the world crosshair, keep planes coherent
+  OB.P[0] += dm[0]; OB.P[1] += dm[1]; OB.P[2] += dm[2];
+  obClampP(); obReseat(); obSyncIdx();
+}
+function obNormIdx(k){           // P's through-plane position of view k, in slice steps
+  return Math.round(dot3(OB.P, obBasis(k, rotMatrix()).n) / S[NORMAL_STEP[k]]);
+}
+function obExit(){
+  if (OB.P) obSyncIdx();
+  S.rotK = null; S.rotAng = 0; OB.P = OB.O = null;
+  obMarks();
+}
+function obMarks(){              // orientation letters follow the rotated basis
+  if (!S.rowD) return;
+  const R = rotMatrix();
+  const pat = w => [0,1,2].map(i => w[0]*S.rowD[i] + w[1]*S.colD[i] + w[2]*S.nrm[i]);
+  for (const k of ["XY","XZ","YZ"]){
+    const { u, v } = obBasis(k, R);
+    const hv = pat(u);
+    setMarks(views[k].c.parentElement, views[k].mirror ? hv.map(x => -x) : hv, pat(v));
+  }
+}
+/* Slice traversal along the view's true normal — oblique-aware everywhere */
+function stepNormal(k, d){
+  if (!d) return;
+  if (S.rotK && OB.P){
+    const { n } = obBasis(k, rotMatrix()), st = S[NORMAL_STEP[k]]*d;
+    obMoveP([st*n[0], st*n[1], st*n[2]]);
+  }
+  else if (k==="XY") S.iz = clamp(S.iz+d, S.nz-1);
+  else if (k==="XZ") S.iy = clamp(S.iy+d, S.ny-1);
+  else S.ix = clamp(S.ix+d, S.nx-1);
+  drawAll();
+}
+function fillOblique(k){
+  const V = views[k], d = V.img.data, W = V.c.width, H = V.c.height;
+  const { sx, sy, sz, nx, ny, nz, vol, volC } = S;
+  const { u, v } = obBasis(k, rotMatrix()), [pw, ph] = planeSpacing(k), O = OB.O[k];
+  // plane start + per-pixel steps in voxel units — the hot loop is pure adds
+  const bx = O[0]/sx, by = O[1]/sy, bz = O[2]/sz;
+  const dux = pw*u[0]/sx, duy = pw*u[1]/sy, duz = pw*u[2]/sz;
+  const dvx = ph*v[0]/sx, dvy = ph*v[1]/sy, dvz = ph*v[2]/sz;
+  const f = lut(), put = pixelWriter(d), pl = nx*ny;
+  const X = nx-1, Y = ny-1, Z = nz-1;
+  let o = 0;
+  for (let q = 0; q < H; q++){
+    let vx = bx + q*dvx, vy = by + q*dvy, vz = bz + q*dvz;
+    for (let p = 0; p < W; p++, o += 4, vx += dux, vy += duy, vz += duz){
+      if (vx < 0 || vy < 0 || vz < 0 || vx > X || vy > Y || vz > Z){
+        d[o] = d[o+1] = d[o+2] = 0; d[o+3] = 255; continue;
+      }
+      if (volC){ // color: nearest voxel — sub-voxel blending of RGB adds nothing here
+        const si = (Math.round(vz)*pl + Math.round(vy)*nx + Math.round(vx))*4;
+        d[o] = volC[si]; d[o+1] = volC[si+1]; d[o+2] = volC[si+2]; d[o+3] = 255; continue;
+      }
+      const x0 = vx|0, y0 = vy|0, z0 = vz|0;
+      const x1 = x0 < X ? x0+1 : x0, fx = vx-x0, fy = vy-y0, fz = vz-z0;
+      const r00 = z0*pl + y0*nx, r10 = r00 + (y0 < Y ? nx : 0);
+      const r01 = r00 + (z0 < Z ? pl : 0), r11 = r01 + (y0 < Y ? nx : 0);
+      const a = vol[r00+x0] + (vol[r00+x1]-vol[r00+x0])*fx;
+      const b = vol[r10+x0] + (vol[r10+x1]-vol[r10+x0])*fx;
+      const c2 = vol[r01+x0] + (vol[r01+x1]-vol[r01+x0])*fx;
+      const e2 = vol[r11+x0] + (vol[r11+x1]-vol[r11+x0])*fx;
+      const g0 = a + (b-a)*fy, g1 = c2 + (e2-c2)*fy;
+      put(o, f(g0 + (g1-g0)*fz));
+    }
+  }
+}
+function drawColorbar(){
+  const c = $("cbar"), ctx = c.getContext("2d"), cm = useCmap();
+  for (let x=0;x<c.width;x++){
+    let g = Math.round(x/(c.width-1)*255);
+    if (S.invert) g = 255-g;
+    ctx.fillStyle = cm ? `rgb(${INFERNO[g*3]},${INFERNO[g*3+1]},${INFERNO[g*3+2]})` : `rgb(${g},${g},${g})`;
+    ctx.fillRect(x, 0, 1, c.height);
+  }
+  $("cbRange").textContent = `${Math.round(S.wc-S.ww/2)} … ${Math.round(S.wc+S.ww/2)}`;
+}
+
+/* In-plane voxel spacing (mm) per view: [horizontal, vertical] */
+const planeSpacing = k =>
+  k === "XY" ? [S.sx, S.sy] : k === "XZ" ? [S.sx, S.sz] : [S.sy, S.sz];
+
+function ruler(k){
+  const v = views[k], r = v.ruler;
+  if (!r) return;
+  const { ctx, c } = v, [spx, spy] = planeSpacing(k);
+  const mm = Math.hypot((r.x1-r.x0)*spx, (r.y1-r.y0)*spy);
+  ctx.save();
+  ctx.strokeStyle = "#ffaf5f"; ctx.fillStyle = "#ffaf5f";
+  ctx.lineWidth = Math.max(1, c.width/400);
+  ctx.beginPath(); ctx.moveTo(r.x0+.5, r.y0+.5); ctx.lineTo(r.x1+.5, r.y1+.5); ctx.stroke();
+  const cap = Math.max(2, c.width/160);
+  for (const [px,py] of [[r.x0,r.y0],[r.x1,r.y1]]){
+    ctx.beginPath(); ctx.arc(px+.5, py+.5, cap/2, 0, 7); ctx.fill();
+  }
+  const fs = Math.max(11, c.width/38);
+  ctx.font = `${fs}px monospace`;
+  ctx.shadowColor = "#000"; ctx.shadowBlur = 4;
+  const tx = Math.min(c.width - fs*6, Math.max(4, (r.x0+r.x1)/2 + fs*0.6));
+  const ty = Math.min(c.height - 6, Math.max(fs, (r.y0+r.y1)/2 - fs*0.4));
+  ctx.fillText(`${mm.toFixed(1)} mm`, tx, ty);
+  ctx.restore();
+}
+
+/* Hover probe: voxel position + rescaled value in the status bar */
+const setProbe = (pos, val) => { $("pPos").textContent = pos; $("pVal").textContent = val; };
+
+/* ============================================================
+   Viewport pan/zoom — a CSS transform on the canvas element.
+   The crosshair overlays are painted into canvas pixels and the
+   pointer→voxel map reads getBoundingClientRect(), so a pure
+   translate+scale keeps both correct for free. `t` carries the
+   per-view state {zoom, panX, panY[, mirror]}; pan is stored as a
+   fraction of the box so it survives relayout/resize.
+   ============================================================ */
+const MAXZOOM = 16;
+function vpApply(cv, t){
+  const z = t.zoom || 1, px = t.panX || 0, py = t.panY || 0;
+  cv.style.transformOrigin = "50% 50%";
+  // mirror innermost so pan/zoom stay in screen space regardless of the flip
+  cv.style.transform = `translate(${px*100}%, ${py*100}%) scale(${z})` + (t.mirror ? " scaleX(-1)" : "");
+}
+function vpClamp(t){                       // keep the image covering the frame
+  const m = Math.max(0, ((t.zoom||1)-1)/2);
+  t.panX = Math.min(m, Math.max(-m, t.panX || 0));
+  t.panY = Math.min(m, Math.max(-m, t.panY || 0));
+  if ((t.zoom||1) <= 1){ t.panX = 0; t.panY = 0; }
+}
+function vpZoomTo(cv, t, qx, qy, z1){   // set zoom to z1, anchored at normalized point (qx,qy)
+  const z0 = t.zoom || 1;
+  t.panX = (t.panX || 0) + (qx-0.5)*(z0-z1);
+  t.panY = (t.panY || 0) + (qy-0.5)*(z0-z1);
+  t.zoom = z1; vpClamp(t); vpApply(cv, t);
+}
+function vpZoomAt(cv, t, clientX, clientY, factor){   // zoom toward the cursor; returns new level
+  const r = cv.getBoundingClientRect();
+  const z1 = Math.min(MAXZOOM, Math.max(1, (t.zoom || 1)*factor));
+  vpZoomTo(cv, t, (clientX-r.left)/r.width, (clientY-r.top)/r.height, z1);
+  return z1;
+}
+function vpPan(cv, t, dx, dy){
+  t.panX = (t.panX || 0) + dx/(cv.offsetWidth || 1);
+  t.panY = (t.panY || 0) + dy/(cv.offsetHeight || 1);
+  vpClamp(t); vpApply(cv, t);
+}
+function vpReset(cv, t){ t.zoom = 1; t.panX = 0; t.panY = 0; vpApply(cv, t); }
+const wheelZoomFactor = e => Math.exp(-e.deltaY * 0.0015);
+const isPanBtn = e => e.button === 1 || (e.button === 0 && e.altKey); // middle, or ⌥+left
+
+/* Pointer: click/drag = move crosshair (links views); shift-drag = W/L; wheel = scroll slice */
+function bindPointer(k){
+  const v = views[k];
+  if (v.bound) return; // setup() reruns on every series load — the handlers read live state, so bind once
+  v.bound = true;
+  v.zoom = 1; v.panX = 0; v.panY = 0;
+  let wl = null, pan = null;
+  const toVox = e => {
+    const r = v.c.getBoundingClientRect();
+    let px = Math.min(v.c.width-1, Math.max(0, ((e.clientX-r.left)/r.width*v.c.width)|0));
+    if (v.mirror) px = v.c.width-1-px; // undo the display flip so clicks map to true voxels
+    return [ px, Math.min(v.c.height-1, Math.max(0, ((e.clientY-r.top)/r.height*v.c.height)|0)) ];
+  };
+  const place = e => {
+    const [px, py] = toVox(e);
+    if (S.rotK && OB.P){ // tilted: clicked screen point → world, move P there
+      const w = obWorld(k, px, py);
+      obMoveP([w[0]-OB.P[0], w[1]-OB.P[1], w[2]-OB.P[2]]);
+    }
+    else if (k==="XY"){ S.ix=px; S.iy=py; } else if (k==="XZ"){ S.ix=px; S.iz=py; } else { S.iy=px; S.iz=py; }
+    mprBroadcast(k); // this plane sets the shared vertical level; others fall in line
+    drawAll();
+  };
+  v.c.addEventListener("pointerenter", () => { S.hover = k; });
+  v.c.addEventListener("pointerleave", () => setProbe("—", "—"));
+  v.c.addEventListener("pointerdown", e => {
+    v.c.setPointerCapture(e.pointerId);
+    if (isPanBtn(e)){ e.preventDefault(); pan = { x:e.clientX, y:e.clientY }; }
+    else if (SPINE.mode){ const [px,py] = toVox(e); spineSeed(k, px, py); }
+    else if (S.measure){ const [px,py] = toVox(e); v.ruler = { x0:px, y0:py, x1:px, y1:py }; drawAll(); }
+    else if (e.shiftKey){ wl = { x:e.clientX, y:e.clientY, wc:S.wc, ww:S.ww }; }
+    else place(e);
+  });
+  v.c.addEventListener("pointermove", e => {
+    if (S.vol){
+      const [px, py] = toVox(e);
+      let vx, vy, vz;
+      if (S.rotK && OB.P){ // tilted: project the screen point through the plane basis
+        const w = obWorld(k, px, py);
+        vx = Math.round(w[0]/S.sx); vy = Math.round(w[1]/S.sy); vz = Math.round(w[2]/S.sz);
+      } else [vx, vy, vz] = k==="XY" ? [px,py,S.iz] : k==="XZ" ? [px,S.iy,py] : [S.ix,px,py];
+      if (vx<0||vy<0||vz<0||vx>=S.nx||vy>=S.ny||vz>=S.nz) setProbe("—", "—");
+      else {
+        const off = vz*S.nx*S.ny + vy*S.nx + vx;
+        setProbe(`${vx},${vy},${vz}`, S.volC
+          ? `${S.volC[off*4]}/${S.volC[off*4+1]}/${S.volC[off*4+2]}`
+          : Math.round(S.vol[off]*S.slope + S.intercept));
+      }
+    }
+    if (pan){ vpPan(v.c, v, e.clientX-pan.x, e.clientY-pan.y); pan.x = e.clientX; pan.y = e.clientY; mprBroadcast(k); return; }
+    if (!e.buttons) return;
+    if (S.measure && v.ruler){
+      const [px,py] = toVox(e); v.ruler.x1 = px; v.ruler.y1 = py; drawAll();
+    } else if (wl){
+      const range = (S.maxV-S.minV)*S.slope || 1000;
+      S.ww = Math.max(1, wl.ww + (e.clientX-wl.x)/300*range);
+      S.wc = wl.wc + (wl.y-e.clientY)/300*range;
+      drawAll(); sync3DWindow();
+    } else if (!SPINE.mode) place(e);
+  });
+  v.c.addEventListener("pointerup", () => { wl = null; pan = null; });
+  v.c.addEventListener("dblclick", () => { vpReset(v.c, v); mprSyncZoom(1, k); v.ruler = null; drawAll(); });
+  const wst = {};
+  v.c.addEventListener("wheel", e => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey){ mprSyncZoom(vpZoomAt(v.c, v, e.clientX, e.clientY, wheelZoomFactor(e)), k); mprBroadcast(k); return; }
+    stepNormal(k, wheelSteps(wst, e));
+  }, { passive:false });
+}
+const clamp = (v, max) => v<0?0:v>max?max:v;
+const wrap = (v, n) => ((v % n) + n) % n; // slice-index wrap-around (n = stack length)
+
+/* ============================================================
+   Tools: measure, invert, snapshot, keyboard
+   ============================================================ */
+function setMeasure(on){
+  S.measure = on;
+  $("measure").classList.toggle("active", on);
+  if (!on){ for (const k in views) views[k].ruler = null; drawAll(); }
+}
+$("measure").onclick = () => setMeasure(!S.measure);
+
+function toggleInvert(){
+  S.invert = !S.invert;
+  $("invert").classList.toggle("active", S.invert);
+  drawAll(); drawStudyAll();
+  if (R3) R3.setInvert(S.invert);
+}
+$("invert").onclick = toggleInvert;
+
+$("scaleBtn").onclick = () => {
+  S.trueScale = !S.trueScale;
+  $("scaleBtn").classList.toggle("active", S.trueScale);
+  layoutCells(); // re-applies the (shared or per-cell) canvas scale
+};
+
+$("linkZoom").onclick = () => {
+  STUDY.linkZoom = !STUDY.linkZoom;
+  $("linkZoom").classList.toggle("active", STUDY.linkZoom);
+  // adopt the active view's zoom across the rest so they immediately match
+  if (STUDY.linkZoom){
+    if (STUDY.active && STUDY.cells.length) syncZoom(STUDY.cells[0].zoom || 1, null);
+    else if (!STUDY.active && S.vol) mprSyncZoom(views.XY.zoom || 1, null);
+  }
+};
+
+$("convBtn").onclick = () => {
+  S.neuro = !S.neuro;
+  const b = $("convBtn");
+  b.textContent = S.neuro ? "Neuro" : "Radio";
+  b.classList.toggle("active", S.neuro);
+  applyConvention();
+};
+
+$("cmapSel").onchange = () => {
+  drawAll(); drawStudyAll();
+  if (R3) R3.setCmap(useCmap() ? 1 : 0);
+};
+
+$("snap").onclick = () => {
+  if (!S.vol) return;
+  let cells;
+  if (STUDY.active) cells = STUDY.cells.filter(c => c.canvas).map(c => ({ el:c.canvas, pw:c.pw, ph:c.ph, mir:c.mirror }));
+  else {
+    cells = [views.XY, views.XZ, views.YZ].map(v => ({ el:v.c, pw:v.pw, ph:v.ph, mir:v.mirror }));
+    if (SPINE.cpr?.c) cells.push({ el:SPINE.cpr.c, pw:SPINE.cpr.c.width, ph:SPINE.cpr.c.height, mir:SPINE.cpr.mirror });
+    const v3 = $("v3d");
+    if (v3.width > 1) cells.push({ el:v3, pw:v3.width, ph:v3.height });
+  }
+  if (!cells.length) return;
+  const CW = 560, pad = 2;
+  const cols = Math.ceil(Math.sqrt(cells.length)), rows = Math.ceil(cells.length/cols);
+  const out = document.createElement("canvas");
+  out.width = CW*cols + pad*(cols-1); out.height = CW*rows + pad*(rows-1);
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, out.width, out.height);
+  cells.forEach((c, i) => {
+    const ox = (i%cols)*(CW+pad), oy = (i/cols|0)*(CW+pad);
+    const s = Math.min(CW/c.pw, CW/c.ph), w = c.pw*s, h = c.ph*s;
+    ctx.save();
+    if (c.mir){ ctx.translate(ox+CW, 0); ctx.scale(-1, 1); ctx.translate(-ox, 0); } // ⇋ mirror is CSS-only — reproduce it in the export
+    ctx.drawImage(c.el, ox+(CW-w)/2, oy+(CW-h)/2, w, h);
+    ctx.restore();
+  });
+  const a = document.createElement("a");
+  a.download = `mpr-${(S.meta.split("·")[0] || "series").trim().replace(/\s+/g,"_")}.png`;
+  a.href = out.toDataURL("image/png");
+  a.click();
+};
+
+addEventListener("keydown", e => {
+  if (e.key === "Escape" && S.vol && !$("drop").classList.contains("hide")) return hideDrop();
+  if (e.key === "Escape" && !$("infoPanel").hidden) return toggleInfo(false);
+  if (!S.vol || e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  const key = e.key.toLowerCase();
+  if (key === "m"){ if (!STUDY.active) setMeasure(!S.measure); }
+  else if (key === "i") toggleInvert();
+  else if (key === "escape"){ setMeasure(false); if (SPINE.mode) spineClear(); }
+  else if (["arrowup","arrowdown","pageup","pagedown"].includes(key)){
+    if (STUDY.active) return;
+    e.preventDefault();
+    const d = key === "arrowup" ? -1 : key === "arrowdown" ? 1 : key === "pageup" ? -5 : 5;
+    stepNormal(S.hover || "XY", d);
+  }
+});
+
+/* ============================================================
+   Spine centerline (semi-auto) + straightened spine (CPR).
+   Two clicks on the spinal canal (any MPR view; sagittal T2 is
+   the intended target) → a corridor dynamic program follows the
+   bright CSF/cord column between the seeds → the volume is
+   resampled along that curve into a straight column, shown in
+   its own CPR cell (SAG / COR / AXL tabs, fully crosshair-linked).
+   All math runs in volume-mm space (voxel index × spacing);
+   patient axes are used only to orient and label the result.
+   ============================================================ */
+const SPINE = { mode:0, seeds:[], line:null, cpr:null, cell:null };
+const SPINE_COLOR = "#ff87d7";
+const spineHint = m => { const h = $("spineHint"); h.hidden = !m; h.textContent = m || ""; };
+
+const v3add = (a,b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+const v3scale = (a,s) => [a[0]*s, a[1]*s, a[2]*s];
+const v3len = a => Math.hypot(a[0], a[1], a[2]);
+const v3unit = a => { const l = v3len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+const v3cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+/* volume-mm direction → patient LPS direction */
+const patDir = d => [0,1,2].map(i => S.rowD[i]*d[0] + S.colD[i]*d[1] + S.nrm[i]*d[2]);
+
+function volAtMM(x, y, z){ // trilinear sample of S.vol at volume-mm coords
+  const { vol, nx, ny, nz, sx, sy, sz } = S;
+  const vx = x/sx, vy = y/sy, vz = z/sz;
+  const X = nx-1, Y = ny-1, Z = nz-1;
+  if (vx < 0 || vy < 0 || vz < 0 || vx > X || vy > Y || vz > Z) return S.minV;
+  const pl = nx*ny;
+  const x0 = vx|0, y0 = vy|0, z0 = vz|0;
+  const x1 = x0 < X ? x0+1 : x0, fx = vx-x0, fy = vy-y0, fz = vz-z0;
+  const r00 = z0*pl + y0*nx, r10 = r00 + (y0 < Y ? nx : 0);
+  const r01 = r00 + (z0 < Z ? pl : 0), r11 = r01 + (y0 < Y ? nx : 0);
+  const a = vol[r00+x0] + (vol[r00+x1]-vol[r00+x0])*fx;
+  const b = vol[r10+x0] + (vol[r10+x1]-vol[r10+x0])*fx;
+  const c = vol[r01+x0] + (vol[r01+x1]-vol[r01+x0])*fx;
+  const e = vol[r11+x0] + (vol[r11+x1]-vol[r11+x0])*fx;
+  const g0 = a + (b-a)*fy, g1 = c + (e-c)*fy;
+  return g0 + (g1-g0)*fz;
+}
+
+// The CPR resamples on the volume's single average geometry (volAtMM/patDir), which is
+// only valid for a rigid single-stack volume. A multi-slab series (S.sliceOrigin set —
+// e.g. the fused disc-angled axial) would shear silently, so the feature is disabled there.
+const spineAvailable = () => !!S.vol && !S.sliceOrigin;
+function spineStart(){
+  if (!S.vol || STUDY.active) return;
+  if (S.sliceOrigin){
+    spineHint("SPINE · unavailable on a multi-angle / multi-slab series — its geometry is non-rigid, so a straightened reformat would shear. Load a single-stack series (e.g. a sagittal T2).");
+    setTimeout(() => spineHint(""), 5000);
+    return;
+  }
+  spineClear(true);
+  SPINE.mode = 1;
+  $("spineBtn").classList.add("active");
+  spineHint("SPINE · click the spinal canal at its TOP — sagittal view works best (1/2) · Esc cancels");
+}
+function spineClear(quiet){
+  SPINE.mode = 0; SPINE.seeds = []; SPINE.line = null; SPINE.cpr = null;
+  $("spineBtn").classList.remove("active");
+  spineHint("");
+  if (SPINE.cell){ SPINE.cell.remove(); SPINE.cell = null; }
+  if (!quiet && S.vol){ layoutCells(); drawAll(); }
+}
+$("spineBtn").onclick = () => (SPINE.mode || SPINE.line) ? spineClear() : spineStart();
+
+function spineSeed(k, px, py){
+  let vx, vy, vz;
+  if (S.rotK && OB.P){ const w = obWorld(k, px, py); vx = w[0]/S.sx; vy = w[1]/S.sy; vz = w[2]/S.sz; }
+  else [vx, vy, vz] = k === "XY" ? [px, py, S.iz] : k === "XZ" ? [px, S.iy, py] : [S.ix, px, py];
+  SPINE.seeds.push([vx*S.sx, vy*S.sy, vz*S.sz]);
+  if (SPINE.seeds.length < 2){
+    spineHint("SPINE · now click the canal at its BOTTOM (2/2) · Esc cancels");
+    drawAll();
+    return;
+  }
+  SPINE.mode = 0;
+  spineHint("SPINE · tracing…");
+  drawAll();
+  setTimeout(() => { // let the hint paint before the synchronous trace
+    try {
+      spineTrace();
+      buildCPR();
+      addCprCell();
+      spineHint("");
+      layoutCells(); drawAll();
+    } catch(err){
+      console.error(err);
+      spineClear(true);
+      spineHint("SPINE · " + (err.message || err));
+      setTimeout(() => spineHint(""), 4000);
+      if (S.vol){ layoutCells(); drawAll(); }
+    }
+  }, 30);
+}
+
+/* Corridor dynamic program between the seeds: every 2 mm along the chord, a
+   grid of candidate offsets in the perpendicular plane; node cost = darkness
+   (the canal is the bright column) + a lateral-move penalty; both endpoints
+   pinned to the clicks. The cheapest path through the corridor is the canal. */
+function spineTrace(){
+  const [A, B] = SPINE.seeds;
+  const D = v3sub(B, A), L = v3len(D);
+  if (L < 40) throw new Error("seeds too close — click top and bottom of the canal (≥40 mm apart)");
+  const T = v3unit(D);
+  const axes = [[1,0,0],[0,1,0],[0,0,1]], al = axes.map(a => Math.abs(v3dot(a, T)));
+  const ref = axes[al.indexOf(Math.min(...al))];          // least-aligned volume axis
+  const U = v3unit(v3sub(ref, v3scale(T, v3dot(ref, T))));
+  const W = v3cross(T, U);
+  const STEP = 2, R = 30, G = 1.5;                        // mm: advance, corridor half-width, node pitch
+  const H = Math.round(R/G), M = 2*H + 1, nn = M*M;
+  const NT = Math.max(2, Math.round(L/STEP));
+  // corridor intensities, 3×3-smoothed per step
+  const I = new Float32Array((NT+1)*nn), raw = new Float32Array(nn);
+  let hi = -Infinity, lo = Infinity;
+  for (let t = 0; t <= NT; t++){
+    const C = v3add(A, v3scale(D, t/NT));
+    for (let a = -H; a <= H; a++) for (let b = -H; b <= H; b++)
+      raw[(a+H)*M + (b+H)] = volAtMM(
+        C[0] + a*G*U[0] + b*G*W[0],
+        C[1] + a*G*U[1] + b*G*W[1],
+        C[2] + a*G*U[2] + b*G*W[2]);
+    const base = t*nn;
+    for (let i = 0; i < M; i++) for (let j = 0; j < M; j++){
+      let s = 0, c = 0;
+      for (let di = -1; di <= 1; di++){
+        const ii = i+di; if (ii < 0 || ii >= M) continue;
+        for (let dj = -1; dj <= 1; dj++){
+          const jj = j+dj; if (jj < 0 || jj >= M) continue;
+          s += raw[ii*M+jj]; c++;
+        }
+      }
+      const v = s/c;
+      I[base + i*M + j] = v;
+      if (v > hi) hi = v; if (v < lo) lo = v;
+    }
+  }
+  const span = (hi - lo) || 1;
+  // DP: transitions ±2 nodes per axis per step, endpoints pinned to the centre
+  const MOVE = 0.018;                                     // lateral-move penalty per node-step²
+  const INF = 1e18;
+  let cur = new Float64Array(nn).fill(INF), nxt = new Float64Array(nn);
+  const par = new Int16Array((NT+1)*nn);
+  cur[H*M + H] = 0;
+  for (let t = 1; t <= NT; t++){
+    nxt.fill(INF);
+    const base = t*nn;
+    for (let i = 0; i < M; i++) for (let j = 0; j < M; j++){
+      const ni = i*M + j;
+      let best = INF, bp = -1;
+      for (let di = -2; di <= 2; di++){
+        const pi = i+di; if (pi < 0 || pi >= M) continue;
+        for (let dj = -2; dj <= 2; dj++){
+          const pj = j+dj; if (pj < 0 || pj >= M) continue;
+          const c = cur[pi*M + pj] + MOVE*(di*di + dj*dj);
+          if (c < best){ best = c; bp = pi*M + pj; }
+        }
+      }
+      nxt[ni] = best + 1 - (I[base + ni] - lo)/span;
+      par[base + ni] = bp;
+    }
+    [cur, nxt] = [nxt, cur];
+  }
+  // backtrack from the pinned end node
+  let node = H*M + H;
+  const pts = new Array(NT+1);
+  for (let t = NT; t >= 0; t--){
+    const a = (node/M|0) - H, b = node%M - H;
+    const C = v3add(A, v3scale(D, t/NT));
+    pts[t] = [
+      C[0] + a*G*U[0] + b*G*W[0],
+      C[1] + a*G*U[1] + b*G*W[1],
+      C[2] + a*G*U[2] + b*G*W[2]];
+    if (t) node = par[t*nn + node];
+  }
+  // light smoothing, endpoints kept
+  SPINE.line = pts.map((p, i) => {
+    if (i === 0 || i === pts.length-1) return p;
+    const from = Math.max(0, i-2), to = Math.min(pts.length-1, i+2), q = [0,0,0];
+    for (let j = from; j <= to; j++){ q[0] += pts[j][0]; q[1] += pts[j][1]; q[2] += pts[j][2]; }
+    return v3scale(q, 1/(to-from+1));
+  });
+}
+
+/* Resample the volume along the centerline into a straight column:
+   s = arc length (1 mm, superior → inferior regardless of click order),
+   u/v = perpendicular offsets (±45 mm, 1 mm). Cross frames are
+   parallel-transported (no twist), then oriented u → patient-left and
+   v → patient-posterior so the straightened views read like normal ones. */
+function buildCPR(){
+  const src = SPINE.line.slice();
+  if (patDir(v3sub(src[src.length-1], src[0]))[2] > 0) src.reverse();
+  const cum = [0];
+  for (let i = 1; i < src.length; i++) cum.push(cum[i-1] + v3len(v3sub(src[i], src[i-1])));
+  const len = cum[cum.length-1];
+  const ns = Math.max(3, Math.round(len) + 1);
+  const C = [];
+  for (let s = 0, i = 0; s < ns; s++){
+    const d = Math.min(s*len/(ns-1), len);
+    while (i < src.length-2 && cum[i+1] < d) i++;
+    const f = (d - cum[i]) / ((cum[i+1] - cum[i]) || 1);
+    C.push([0,1,2].map(q => src[i][q] + (src[i+1][q]-src[i][q])*f));
+  }
+  const T = [];
+  for (let s = 0; s < ns; s++) T.push(v3unit(v3sub(C[Math.min(ns-1, s+4)], C[Math.max(0, s-4)])));
+  const axes = [[1,0,0],[0,1,0],[0,0,1]];
+  const lr = axes.map(a => Math.abs(patDir(a)[0]));
+  let ref = axes[lr.indexOf(Math.max(...lr))];            // the most left/right volume axis
+  if (Math.abs(v3dot(ref, T[0])) > 0.9) ref = axes[lr.indexOf(Math.min(...lr))];
+  const U = [], V = [];
+  let u = v3unit(v3sub(ref, v3scale(T[0], v3dot(ref, T[0]))));
+  if (patDir(u)[0] < 0) u = v3scale(u, -1);
+  for (let s = 0; s < ns; s++){
+    u = v3unit(v3sub(u, v3scale(T[s], v3dot(u, T[s]))));
+    let v = v3cross(T[s], u);
+    if (patDir(v)[1] < 0) v = v3scale(v, -1);
+    U.push(u); V.push(v);
+  }
+  const R = 45, nu = 2*R + 1, nv = 2*R + 1;
+  const vol = new Int16Array(nu*nv*ns);
+  let o = 0;
+  for (let s = 0; s < ns; s++){
+    const c = C[s], uu = U[s], vv = V[s];
+    for (let j = -R; j <= R; j++){
+      const px = c[0] + j*vv[0], py = c[1] + j*vv[1], pz = c[2] + j*vv[2];
+      for (let i = -R; i <= R; i++, o++)
+        vol[o] = volAtMM(px + i*uu[0], py + i*uu[1], pz + i*uu[2]);
+    }
+  }
+  SPINE.cpr = { vol, nu, nv, ns, len, C, U, V, T, tab:"SAG", idx:{ SAG:R, COR:R, AXL:ns>>1 }, mirror:false,
+                labelShift:0, showLevels:true, levels:null };
+  try { detectLevels(); } catch(err){ console.warn("level detection failed:", err); }
+}
+
+function addCprCell(){
+  const cp = SPINE.cpr;
+  const cell = document.createElement("div");
+  cell.className = "cell mpr cpr";
+  cell.style.setProperty("--pc", SPINE_COLOR);
+  cell.innerHTML =
+    `<canvas class="slice"></canvas>
+     <div class="tag"><i></i><span class="lbl">SPINE · STRAIGHTENED</span><em class="syn">CPR</em><em class="est" hidden title="Vertebral levels are an automatic estimate from image periodicity — verify against anatomy. Not a diagnosis.">≈ EST · VERIFY</em></div>
+     <div class="info"></div>
+     <div class="tabs"></div>
+     <div class="levelctl">
+       <button data-lv="toggle" class="on" title="Show/hide detected vertebral levels (SAG/COR)">Levels</button>
+       <button data-lv="up" title="Shift level labels up one (e.g. if the bottom disc isn't L5–S1)">▲</button>
+       <button data-lv="dn" title="Shift level labels down one">▼</button>
+     </div>
+     <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
+     <input type="range" class="slice-slider v" min="0" value="0" step="1" aria-label="CPR slice">`;
+  $("grid").appendChild(cell);
+  SPINE.cell = cell;
+  cp.c = cell.querySelector("canvas");
+  cp.ctx = cp.c.getContext("2d");
+  cp.slider = cell.querySelector("input");
+  cp.slider.style.accentColor = SPINE_COLOR;
+  cp.info = cell.querySelector(".info");
+  cp.estBadge = cell.querySelector(".est");
+  const tabs = cell.querySelector(".tabs");
+  for (const t of ["SAG","COR","AXL"]){
+    const b = document.createElement("button");
+    b.textContent = t; b.dataset.tab = t;
+    b.onclick = () => cprSetTab(t);
+    tabs.appendChild(b);
+  }
+  cp.slider.oninput = () => { cp.idx[cp.tab] = +cp.slider.value; cprDraw(); };
+  cell.querySelector('[data-lv="toggle"]').onclick = e => { cp.showLevels = !cp.showLevels; e.currentTarget.classList.toggle("on", cp.showLevels); cprDraw(); };
+  cell.querySelector('[data-lv="up"]').onclick = () => shiftLevels(1);
+  cell.querySelector('[data-lv="dn"]').onclick = () => shiftLevels(-1);
+  const toPix = e => {
+    const r = cp.c.getBoundingClientRect();
+    let px = Math.min(cp.c.width-1, Math.max(0, ((e.clientX-r.left)/r.width*cp.c.width)|0));
+    if (cp.mirror) px = cp.c.width-1-px;
+    return [px, Math.min(cp.c.height-1, Math.max(0, ((e.clientY-r.top)/r.height*cp.c.height)|0))];
+  };
+  const placeCpr = e => { // CPR pixel → curve frame → volume voxel: moves the shared crosshair
+    const [px, py] = toPix(e), ru = (cp.nu-1)/2, rv = (cp.nv-1)/2, t = cp.tab;
+    const s = clamp(t === "AXL" ? cp.idx.AXL : py, cp.ns-1);
+    const u = t === "SAG" ? cp.idx.SAG - ru : px - ru;
+    const v = t === "SAG" ? px - rv : t === "COR" ? cp.idx.COR - rv : py - rv;
+    const P = v3add(cp.C[s], v3add(v3scale(cp.U[s], u), v3scale(cp.V[s], v)));
+    S.ix = clamp(Math.round(P[0]/S.sx), S.nx-1);
+    S.iy = clamp(Math.round(P[1]/S.sy), S.ny-1);
+    S.iz = clamp(Math.round(P[2]/S.sz), S.nz-1);
+    drawAll();
+  };
+  cp.c.addEventListener("pointerdown", e => { cp.c.setPointerCapture(e.pointerId); placeCpr(e); });
+  cp.c.addEventListener("pointermove", e => { if (e.buttons) placeCpr(e); });
+  const wst = {};
+  cp.c.addEventListener("wheel", e => {
+    e.preventDefault();
+    const d = wheelSteps(wst, e); if (!d) return;
+    cp.idx[cp.tab] = clamp(cp.idx[cp.tab] + d, +cp.slider.max);
+    cp.slider.value = cp.idx[cp.tab];
+    cprDraw();
+  }, { passive:false });
+  cp.c.addEventListener("dblclick", () => {
+    cp.idx[cp.tab] = Math.round(+cp.slider.max/2);
+    cp.slider.value = cp.idx[cp.tab];
+    cprDraw();
+  });
+  cprSetTab("SAG");
+}
+
+function cprSetTab(tab){
+  const cp = SPINE.cpr, cell = SPINE.cell;
+  cp.tab = tab;
+  const [w, h] = tab === "SAG" ? [cp.nv, cp.ns] : tab === "COR" ? [cp.nu, cp.ns] : [cp.nu, cp.nv];
+  cp.c.width = w; cp.c.height = h;
+  cp.c.style.aspectRatio = `${w} / ${h}`;
+  cp.c.dataset.mmw = w; cp.c.dataset.mmh = h;             // 1 mm grid — pixels are mm
+  cell.dataset.aspect = w/h;
+  cp.img = cp.ctx.createImageData(w, h);
+  cp.slider.max = (tab === "SAG" ? cp.nu : tab === "COR" ? cp.nv : cp.ns) - 1;
+  cp.slider.value = cp.idx[tab];
+  cell.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  // screen axes in patient terms; L/R-horizontal tabs honor the display convention
+  const mid = cp.ns >> 1;
+  const hvPat = tab === "SAG" ? patDir(cp.V[mid]) : patDir(cp.U[mid]);
+  const vvPat = tab === "AXL" ? patDir(cp.V[mid]) : patDir(cp.T[mid]);
+  const travPat = tab === "SAG" ? patDir(cp.U[mid]) : tab === "COR" ? patDir(cp.V[mid]) : patDir(cp.T[mid]);
+  cp.mirror = convFlip(hvPat);
+  vpApply(cp.c, { mirror: cp.mirror });
+  setMarks(cell, cp.mirror ? hvPat.map(x => -x) : hvPat, vvPat);
+  cp.slider.className = "slice-slider " + ("LR".includes(dirLetter(travPat)) ? "h" : "v");
+  midTick(cell, cp.slider);
+  layoutCells();
+  cprDraw();
+}
+
+function cprLocate(){ // MPR crosshair → nearest curve point + in-plane offsets (mm)
+  const cp = SPINE.cpr;
+  const p = [S.ix*S.sx, S.iy*S.sy, S.iz*S.sz];
+  let bs = 0, bd = Infinity;
+  for (let s = 0; s < cp.ns; s++){
+    const a = p[0]-cp.C[s][0], b = p[1]-cp.C[s][1], c = p[2]-cp.C[s][2];
+    const dd = a*a + b*b + c*c;
+    if (dd < bd){ bd = dd; bs = s; }
+  }
+  const d = v3sub(p, cp.C[bs]);
+  return { s: bs, u: Math.round(v3dot(d, cp.U[bs])), v: Math.round(v3dot(d, cp.V[bs])), dist: Math.sqrt(bd) };
+}
+
+function cprDraw(){
+  const cp = SPINE.cpr;
+  if (!cp || !cp.ctx || !S.vol) return;
+  const f = lut(), put = pixelWriter(cp.img.data);
+  const { vol, nu, nv, ns, tab } = cp, idx = cp.idx[tab];
+  if (tab === "AXL"){ const base = idx*nv*nu, n = nv*nu; for (let p = 0; p < n; p++) put(p*4, f(vol[base+p])); }
+  else if (tab === "COR"){ let o = 0; for (let s = 0; s < ns; s++){ const row = (s*nv + idx)*nu; for (let i = 0; i < nu; i++, o += 4) put(o, f(vol[row+i])); } }
+  else { let o = 0; for (let s = 0; s < ns; s++){ const base = s*nv*nu + idx; for (let j = 0; j < nv; j++, o += 4) put(o, f(vol[base + j*nu])); } }
+  cp.ctx.putImageData(cp.img, 0, 0);
+  const q = cprLocate(), ru = (nu-1)/2, rv = (nv-1)/2;
+  if (q.dist <= Math.max(ru, rv)){
+    const [px, py] = tab === "SAG" ? [q.v+rv, q.s] : tab === "COR" ? [q.u+ru, q.s] : [q.u+ru, q.v+rv];
+    const ctx = cp.ctx;
+    ctx.save();
+    ctx.globalAlpha = .55; ctx.strokeStyle = SPINE_COLOR;
+    ctx.lineWidth = Math.max(1, cp.c.width/500);
+    ctx.beginPath(); ctx.moveTo(px+.5, 0); ctx.lineTo(px+.5, cp.c.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, py+.5); ctx.lineTo(cp.c.width, py+.5); ctx.stroke();
+    ctx.restore();
+  }
+  cprDrawLevels();
+  const showLv = cp.showLevels && cp.levels;
+  if (cp.estBadge) cp.estBadge.hidden = !showLv;         // persistent "estimate — verify" chip while labels are shown
+  const lvl = tab === "AXL" ? levelAt(idx) : null;       // AXL is a single arc position → name it
+  cp.info.textContent = `${tab.toLowerCase()} ${idx+1}/${+cp.slider.max+1} · px 1.00×1.00 mm · curve ${Math.round(cp.len)} mm`
+    + (showLv ? (lvl ? ` · ≈${lvl.label}?` : ` · ${cp.levels.length} discs (est)`) : "");
+}
+
+/* Centerline + seed markers on the orthogonal MPR views; segments fade with
+   through-plane distance so the in-slice stretch reads bright. */
+function spineOverlay(k){
+  if (S.rotK && OB.P) return; // tilted planes — a straight projection would lie
+  const v = views[k], ctx = v.ctx, c = v.c;
+  const proj = p => k === "XY" ? [p[0]/S.sx, p[1]/S.sy, Math.abs(p[2]/S.sz - S.iz)]
+             : k === "XZ" ? [p[0]/S.sx, p[2]/S.sz, Math.abs(p[1]/S.sy - S.iy)]
+                          : [p[1]/S.sy, p[2]/S.sz, Math.abs(p[0]/S.sx - S.ix)];
+  ctx.save();
+  ctx.strokeStyle = SPINE_COLOR;
+  ctx.lineWidth = Math.max(1.2, c.width/420);
+  if (SPINE.line){
+    const P = SPINE.line.map(proj);
+    for (let i = 1; i < P.length; i++){
+      ctx.globalAlpha = Math.max(.14, Math.min(.9, 1 - (P[i-1][2] + P[i][2])/16));
+      ctx.beginPath(); ctx.moveTo(P[i-1][0]+.5, P[i-1][1]+.5); ctx.lineTo(P[i][0]+.5, P[i][1]+.5); ctx.stroke();
+    }
+  }
+  for (const sd of SPINE.seeds){
+    const p = proj(sd);
+    ctx.globalAlpha = Math.max(.3, Math.min(1, 1 - p[2]/8));
+    ctx.beginPath(); ctx.arc(p[0]+.5, p[1]+.5, Math.max(3, c.width/130), 0, 7); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ── Automatic level labeling ───────────────────────────────
+   The straightened column makes the vertebra/disc stack nearly
+   periodic along s (arc length). We profile the anterior
+   vertebral-body marrow, find its dominant period + phase with a
+   comb (robust to a dim body a plain peak-finder would miss),
+   snap each tooth to the local marrow maximum, and place each
+   disc at the intensity minimum between adjacent bodies. Names
+   are assigned bottom-up (lowest disc = L5–S1 by default, since
+   this is lumbar data) and the whole naming can be shifted a
+   level at a time — the DETECTION is data-driven, the NAMING is
+   an anchored guess the user verifies. Not a diagnosis. */
+const DISC_NAMES = ["L5–S1","L4–L5","L3–L4","L2–L3","L1–L2","T12–L1","T11–T12","T10–T11","T9–T10","T8–T9","T7–T8"];
+const LEVEL_COLOR = "#6f9dc9";
+const smooth1D = (A, w) => {
+  const n = A.length, O = new Float32Array(n);
+  for (let i = 0; i < n; i++){ let s = 0, c = 0; for (let d = -w; d <= w; d++){ const j = i+d; if (j >= 0 && j < n){ s += A[j]; c++; } } O[i] = s/c; }
+  return O;
+};
+/* mean-intensity profile along the arc, through the vertebral-body band
+   (the brightest purely-anterior column — the canal at v≈0 is excluded) */
+function cprBodyProfile(){
+  const cp = SPINE.cpr, { vol, nu, nv, ns } = cp, ru = (nu-1)/2, rv = (nv-1)/2;
+  let bestV = -16, bestVal = -Infinity;
+  for (let vo = -34; vo <= -6; vo++){
+    if (vo+rv < 0 || vo+rv >= nv) continue;
+    let s = 0; for (let ss = 0; ss < ns; ss++) for (let u = -10; u <= 10; u++) s += vol[ss*nv*nu + (vo+rv)*nu + (u+ru)];
+    if (s > bestVal){ bestVal = s; bestV = vo; }
+  }
+  const P = new Float32Array(ns);
+  for (let s = 0; s < ns; s++){
+    let sum = 0, c = 0;
+    for (let vo = bestV-10; vo <= bestV+10; vo++){
+      if (vo+rv < 0 || vo+rv >= nv) continue;
+      for (let u = -12; u <= 12; u++){ sum += vol[s*nv*nu + (vo+rv)*nu + (u+ru)]; c++; }
+    }
+    P[s] = c ? sum/c : 0;
+  }
+  return P;
+}
+// Detection only emits labels when the marrow profile is convincingly periodic — the comb
+// otherwise locks onto noise/edges and produces confident-but-meaningless level names (the
+// exact failure mode we must avoid on the user's own scans). `MIN_LEVEL_STRENGTH` is the
+// minimum contrast (vertebra-teeth minus disc-teeth, in units of the profile's own detrended
+// RMS) required to name anything; calibrated so a real sagittal lumbar stack passes and a
+// single-slice / non-spine reformat fails.
+const MIN_LEVEL_STRENGTH = 0.55;
+function detectLevels(){
+  const cp = SPINE.cpr, ns = cp.ns;
+  cp.levels = null; cp.vertPos = null; cp.levelStrength = 0;
+  if (ns < 90) return;                                   // too short to hold a few vertebrae
+  const P = cprBodyProfile(), Sm = smooth1D(P, 2);
+  const D = new Float32Array(ns), W = 20;                // detrend against a long moving average
+  for (let s = 0; s < ns; s++){ let sum = 0, c = 0; for (let d = -W; d <= W; d++){ const i = s+d; if (i >= 0 && i < ns){ sum += P[i]; c++; } } D[s] = Sm[s] - sum/c; }
+  // dominant period + phase (vertebra centres are bright). A comb is only a candidate if all
+  // its teeth are in-range — Math.round(x) can hit ns (x∈[ns-0.5,ns)); the original code let
+  // that read D[ns]=undefined→NaN, which silently disqualified the comb. We keep that "must fit
+  // the span" prior but make it explicit (score −∞), avoiding the NaN (finding #3).
+  let best = null;
+  for (let T = 30; T <= 42; T += 0.5) for (let ph = 0; ph < T; ph += 1){
+    let sc = 0, n = 0, valid = true;
+    for (let x = ph; x < ns; x += T){ const i = Math.round(x); if (i >= ns){ valid = false; break; } sc += D[i]; n++; }
+    if (valid && n >= 3 && (!best || sc > best.sc)) best = { T, ph, sc, n };
+  }
+  if (!best) return;
+  // periodicity strength: mean of the bright vertebra comb vs the anti-phase disc comb, in RMS
+  // units (in-range teeth only). Gate below suppresses labels when it isn't convincingly periodic.
+  const meanOver = (ph, T) => { let sc = 0, n = 0; for (let x = ph; x < ns; x += T){ const i = Math.round(x); if (i >= 0 && i < ns){ sc += D[i]; n++; } } return n ? sc/n : 0; };
+  let sq = 0; for (let s = 0; s < ns; s++) sq += D[s]*D[s];
+  const rmsD = Math.sqrt(sq/ns) || 1;
+  const teethMean = best.sc/best.n, antiMean = meanOver((best.ph + best.T/2) % best.T, best.T);
+  const strength = (teethMean - antiMean) / rmsD;
+  cp.levelStrength = strength; cp.period = best.T;
+  if (teethMean <= 0 || strength < MIN_LEVEL_STRENGTH) return; // not convincingly a vertebral stack → no labels
+  const T = best.T, r = Math.round(T*0.28), cent = [];
+  for (let x = best.ph; x < ns; x += T){                 // snap each comb tooth to the local marrow max
+    let c = Math.round(x), bi = c, bv = -Infinity;
+    for (let d = -r; d <= r; d++){ const i = c+d; if (i >= 0 && i < ns && Sm[i] > bv){ bv = Sm[i]; bi = i; } }
+    cent.push(bi);
+  }
+  // drop only bodies pinned to the ABSOLUTE array boundary (a comb tooth clamped to s≈0 or
+  // s≈ns-1 is an artifact, not a real vertebra); a small margin keeps genuine end vertebrae.
+  const EDGE = 4;
+  const vc = [...new Set(cent)].sort((a,b) => a-b).filter(s => s >= EDGE && s <= ns-1-EDGE);
+  if (vc.length < 2) return;
+  const discs = [];                                      // disc = intensity minimum between adjacent bodies
+  for (let i = 1; i < vc.length; i++){
+    let bi = Math.round((vc[i-1]+vc[i])/2), bv = Infinity;
+    for (let s = vc[i-1]+3; s <= vc[i]-3; s++) if (Sm[s] < bv){ bv = Sm[s]; bi = s; }
+    discs.push(bi);
+  }
+  if (!discs.length) return;
+  cp.vertPos = vc;
+  cp.levels = discs.map(s => ({ s, label:"" }));
+  labelLevels();
+}
+function labelLevels(){
+  const cp = SPINE.cpr;
+  if (!cp.levels) return;
+  const n = cp.levels.length;
+  cp.levels.forEach((L, i) => {                          // i ascending = top→bottom; rank 0 = lowest disc
+    const rank = (n-1-i) + cp.labelShift;
+    L.label = rank >= 0 && rank < DISC_NAMES.length ? DISC_NAMES[rank] : "·";
+  });
+}
+/* nearest labeled level to an arc position (for the AXL readout) */
+function levelAt(s){
+  const cp = SPINE.cpr;
+  if (!cp.levels || !cp.levels.length) return null;
+  let best = cp.levels[0];
+  for (const L of cp.levels) if (Math.abs(L.s-s) < Math.abs(best.s-s)) best = L;
+  return Math.abs(best.s-s) <= (cp.period||34)*0.6 ? best : null;
+}
+function cprDrawLevels(){
+  const cp = SPINE.cpr, tab = cp.tab;
+  if (!cp.showLevels || !cp.levels || !(tab === "SAG" || tab === "COR")) return;
+  const ctx = cp.ctx, w = cp.c.width;
+  ctx.save();
+  ctx.strokeStyle = LEVEL_COLOR; ctx.fillStyle = LEVEL_COLOR;
+  ctx.lineWidth = Math.max(1, w/500);
+  ctx.font = `${Math.max(9, w/9)}px monospace`;
+  ctx.textBaseline = "bottom";
+  ctx.setLineDash([5, 4]);
+  for (const L of cp.levels){
+    ctx.globalAlpha = .5;
+    ctx.beginPath(); ctx.moveTo(0, L.s+.5); ctx.lineTo(w, L.s+.5); ctx.stroke();
+    if (tab === "SAG"){ ctx.globalAlpha = .95; ctx.fillText("≈"+L.label, 2, L.s-1); } // ≈ marks an estimate; SAG is never L/R-mirrored → text reads correctly
+  }
+  ctx.restore();
+}
+function shiftLevels(d){
+  const cp = SPINE.cpr;
+  if (!cp || !cp.levels) return;
+  cp.labelShift += d;
+  labelLevels();
+  cprDraw();
+}
+
+/* ============================================================
+   Info panel — patient / study / series / image / slicing details
+   ============================================================ */
+function renderInfo(){
+  const p = $("infoPanel");
+  const entry = S.seriesList[S.curIdx];
+  if (!entry || !S.vol){ p.innerHTML = `<h3>INFO</h3><dl><dt>status</dt><dd>no volume loaded</dd></dl>`; return; }
+  const d = entry.slices[0].ds;
+  const g = t => esc((d.string(t) || "").trim());
+  const dt8 = v => /^\d{8}$/.test(v) ? `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}` : v;
+  const tm6 = v => /^\d{6}/.test(v) ? `${v.slice(0,2)}:${v.slice(2,4)}` : v;
+  const row = (k, v, u="") => v ? `<dt>${k}</dt><dd>${v}${u}</dd>` : "";
+  const sec = (t, rows) => rows ? `<h3>${t}</h3><dl>${rows}</dl>` : "";
+  const thick = parseFloat(sliceStr(entry.slices[0], "x00180050"));
+  const spTag = parseFloat(sliceStr(entry.slices[0], "x00180088"));
+  const tmin = Math.min(...S.sliceTilt), tmax = Math.max(...S.sliceTilt);
+  const gapNote = thick && S.nz > 1
+    ? (S.sz - thick > 0.05 ? ` · ${(S.sz-thick).toFixed(2)} mm gap` : thick - S.sz > 0.05 ? ` · ${(thick-S.sz).toFixed(2)} mm overlap` : " · contiguous")
+    : "";
+  const nfiles = new Set(entry.slices.map(s => s.ds)).size;
+  const shortTS = ts => (TS_NAME[ts] || ts).replace(" Little Endian", " LE").replace(" Big Endian", " BE");
+  p.innerHTML =
+    sec("PATIENT",
+      row("name", g("x00100010").replace(/\^/g, " ")) + row("id", g("x00100020")) +
+      row("sex", g("x00100040")) + row("born", dt8(g("x00100030"))))
+    + sec("STUDY",
+      row("date", (dt8(g("x00080020")) + " " + tm6(g("x00080030"))).trim()) +
+      row("description", g("x00081030")) + row("institution", g("x00080080")) +
+      row("accession", g("x00080050")))
+    + sec(`SERIES ${esc(entry.tag)} · ACTIVE`,
+      row("description", esc(entry.desc)) + row("modality", g("x00080060")) +
+      row("body part", g("x00180015")) + row("protocol", g("x00181030")) +
+      row("TR / TE", g("x00180080") && `${g("x00180080")} / ${g("x00180081") || "—"} ms`) +
+      row("TI", g("x00180082"), " ms") + row("flip angle", g("x00181314"), "°") +
+      row("field", g("x00180087"), " T") + row("kVp", g("x00180060")) +
+      row("device", [g("x00080070"), g("x00081090")].filter(Boolean).join(" ")) +
+      row("station", g("x00081010")))
+    + sec("IMAGE",
+      row("matrix", `${S.nx} × ${S.ny} × ${S.nz}`) +
+      row("pixel size", `${S.sx.toFixed(2)} × ${S.sy.toFixed(2)} mm`) +
+      row("bits", `${g("x00280101") || "?"} stored / ${g("x00280100") || "?"} alloc${d.uint16("x00280103") ? " · signed" : ""}`) +
+      row("photometric", g("x00280004") + (S.volC ? " (color)" : "")) +
+      row("rescale", (S.slope !== 1 || S.intercept !== 0) ? `× ${S.slope} + ${S.intercept}` : "") +
+      row("stored W/L", S.storedWC != null ? `${S.storedWC} / ${S.storedWW}` : ""))
+    + sec("SLICING",
+      row("plane", S.labels.XY + " (acquired)") +
+      row("slices", String(S.nz)) +
+      row("thickness", thick ? thick.toFixed(2) + " mm" : "") +
+      row("spacing tag", spTag ? spTag.toFixed(2) + " mm" : "") +
+      row("step measured", S.nz > 1 ? S.sz.toFixed(2) + " mm" + gapNote : "") +
+      row("obliquity", tmax < 1 ? "square (<1°)"
+        : S.slabSegs.length > 1 ? `∠${fmtDeg(tmin)}–${fmtDeg(tmax)} · ${S.slabSegs.length} slabs` : `∠${fmtDeg(tmax)}`) +
+      row("current", `<span id="infoLive"></span>`))
+    + sec("FILE",
+      row("files", entry.slices[0].nframes > 1 ? `${nfiles} file × ${entry.slices[0].nframes} frames` : String(nfiles)) +
+      row("first file", esc(entry.slices[0].name || "")) +
+      row("transfer syntax", `${TS_NAME[entry.ts] || "?"}<br><span style="color:var(--faint)">${entry.ts}</span>`))
+    + sec("ALL SERIES", S.seriesList.map(s =>
+        row(esc(s.tag), `${esc(s.desc)} — ${s.slices.length} sl · ${shortTS(s.ts)}`
+          + (s === entry ? ' <b style="color:var(--green)">◄</b>' : ""))).join(""));
+  updateInfoLive();
+}
+function updateInfoLive(){
+  const el = document.getElementById("infoLive");
+  if (!el || !S.vol) return;
+  const iz = S.iz;
+  const pos = S.sliceOrigin ? v3dot(S.sliceOrigin[iz], S.sliceNrm[iz]) : v3dot(S.origin, S.nrm) + S.sz*iz;
+  el.textContent = `slice ${iz+1}/${S.nz} · ${pos.toFixed(1)} mm · ∠${fmtDeg(S.sliceTilt[iz] || 0)}`;
+}
+function toggleInfo(force){
+  const p = $("infoPanel");
+  p.hidden = force === undefined ? !p.hidden : !force;
+  $("infoBtn").classList.toggle("active", !p.hidden);
+  if (!p.hidden) renderInfo();
+}
+$("infoBtn").onclick = () => toggleInfo();
+
+/* ============================================================
+   Study layout — every series in its acquired plane, no reformats
+   ============================================================ */
+const STUDY = { active:false, cells:[], P:null, gridMode:"auto", primaryKey:null, crossOnly:true, linkZoom:true }; // P = shared crosshair point, patient LPS mm
+
+/* Linked zoom: with STUDY.linkZoom on, zooming/resetting one acquired view drives
+   every other cell to the same zoom level, each anchored on the SHARED crosshair
+   point so the same anatomy stays centered across views (pairs with true-scale —
+   all cells stay at one mm/px even when magnified). Pan stays per-view. */
+function crosshairQ(st){ // normalized [0..1] position of STUDY.P within this cell's image
+  if (!STUDY.P) return [0.5, 0.5];
+  const [i, j] = patToVox(st.V, STUDY.P);
+  let qx = i/st.V.nx; if (st.mirror) qx = 1-qx;
+  return [clamp(qx, 1), clamp(j/st.V.ny, 1)];
+}
+function syncZoom(z, exceptSt){
+  if (!STUDY.linkZoom) return;
+  for (const st of STUDY.cells){
+    if (st === exceptSt || !st.canvas) continue;
+    const [qx, qy] = crosshairQ(st);
+    vpZoomTo(st.canvas, st, qx, qy, z);
+  }
+}
+
+/* Focus point's VERTICAL screen level in a cell, normalized to half the cell
+   height (0 = centre, ±1 = top/bottom edge). Lets every view be pinned to one
+   shared level so the same height reads across all cells. */
+function focusLevel(st){
+  if (!st.canvas) return 0;
+  const [, qy] = crosshairQ(st);
+  return (((qy-0.5)*(st.zoom||1) + (st.panY||0)) * st.canvas.offsetHeight) / (st.cell.clientHeight/2 || 1);
+}
+/* Bring a cell's focus point into line with the rest: pin it VERTICALLY to the
+   shared level `vLevel` (so everything falls the same height, always), while
+   keeping it HORIZONTALLY in view with a margin (managed near the edge, not
+   hard-recentered). No-op at 1× — nothing is hidden to pan. */
+function syncFocusTo(st, vLevel, margin = 0.14){
+  const z = st.zoom || 1;
+  if (z <= 1 || !STUDY.P || !st.canvas) return;
+  const cv = st.canvas, bw = cv.offsetWidth, bh = cv.offsetHeight;
+  const cw = st.cell.clientWidth, ch = st.cell.clientHeight;
+  if (!bw || !bh || !cw || !ch) return;
+  const [qx, qy] = crosshairQ(st);
+  const limX = cw/2 - margin*cw, offX = ((qx-0.5)*z + (st.panX||0))*bw; // horizontal: keep in view
+  if (offX >  limX) st.panX -= (offX - limX)/bw;
+  else if (offX < -limX) st.panX += (-limX - offX)/bw;
+  st.panY = (vLevel*ch/2)/bh - (qy-0.5)*z;                              // vertical: pin to shared level
+  vpApply(cv, st);
+}
+/* The view being interacted with sets the shared vertical level; every other
+   zoomed view falls in line so all cells stay level, always. */
+function broadcastFocus(activeSt){
+  const vLevel = focusLevel(activeSt);
+  for (const st of STUDY.cells) if (st !== activeSt) syncFocusTo(st, vLevel);
+}
+
+/* ── MPR analogs of the sync helpers ── the three planes share ONE volume, so the
+   crosshair is the voxel S.ix/iy/iz projected into each plane (mirror-aware).
+   Skipped in oblique mode, where the crosshair comes from the rotated OB.P. */
+const MPR_PLANES = ["XY","XZ","YZ"];
+function mprQ(k){ // normalized [0..1] crosshair position within plane k's image
+  let qx, qy;
+  if (k === "XY"){ qx = S.ix/S.nx; qy = S.iy/S.ny; }
+  else if (k === "XZ"){ qx = S.ix/S.nx; qy = S.iz/S.nz; }
+  else { qx = S.iy/S.ny; qy = S.iz/S.nz; }
+  if (views[k].mirror) qx = 1 - qx; // undo the L/R display flip
+  return [clamp(qx, 1), clamp(qy, 1)];
+}
+function mprLevel(k){
+  const cv = views[k].c;
+  if (!cv.offsetHeight) return 0;
+  const [, qy] = mprQ(k);
+  return (((qy-0.5)*(views[k].zoom||1) + (views[k].panY||0)) * cv.offsetHeight) / (cv.parentElement.clientHeight/2 || 1);
+}
+function mprSyncFocusTo(k, vLevel, margin = 0.14){
+  const v = views[k], z = v.zoom || 1;
+  if (z <= 1 || !S.vol) return;
+  const cv = v.c, bw = cv.offsetWidth, bh = cv.offsetHeight, cell = cv.parentElement;
+  const cw = cell.clientWidth, ch = cell.clientHeight;
+  if (!bw || !bh || !cw || !ch) return;
+  const [qx, qy] = mprQ(k);
+  const limX = cw/2 - margin*cw, offX = ((qx-0.5)*z + (v.panX||0))*bw; // horizontal: keep in view
+  if (offX >  limX) v.panX -= (offX - limX)/bw;
+  else if (offX < -limX) v.panX += (-limX - offX)/bw;
+  v.panY = (vLevel*ch/2)/bh - (qy-0.5)*z;                              // vertical: pin to shared level
+  vpApply(cv, v);
+}
+function mprBroadcast(activeK){
+  if (S.rotK) return; // oblique: crosshair is OB.P, not the orthogonal voxel
+  const vLevel = mprLevel(activeK);
+  for (const k of MPR_PLANES) if (k !== activeK) mprSyncFocusTo(k, vLevel);
+}
+function mprSyncZoom(z, exceptK){
+  if (!STUDY.linkZoom || S.rotK) return;
+  for (const k of MPR_PLANES){
+    if (k === exceptK) continue;
+    const [qx, qy] = mprQ(k);
+    vpZoomTo(views[k].c, views[k], qx, qy, z);
+  }
+}
+
+/* Non-tomographic modalities — captures (US, endoscopy, photos, secondary
+   capture). These carry no cross-sectional geometry, so an MPR study grid
+   can only show them as-acquired, never reformatted. Hidden by default. */
+const SECONDARY_MOD = new Set(["US","XC","GM","ES","OP","OT","SC","OPT","OPV","IVUS"]);
+/* True when a series belongs in the cross-sectional study grid. Color pixel
+   data (RGB/YBR) is likewise never CT/MR volume data. */
+const isTomographic = e => !e.color && !SECONDARY_MOD.has(e.modality);
+
+$("layoutSel").onchange = e => setLayout(e.target.value);
+$("gridSel").onchange = e => { STUDY.gridMode = e.target.value; layoutCells(); };
+$("crossOnly").querySelector("input").onchange = e => {
+  STUDY.crossOnly = e.target.checked;
+  if (STUDY.active){ destroyStudyCells(); buildStudyCells(); }
+};
+function setLayout(mode){
+  if (S.rotK) obExit(); // the study grid has no oblique state — leave clean
+  STUDY.active = mode === "study";
+  $("gridSel").hidden = !STUDY.active;
+  $("crossOnly").hidden = !STUDY.active;
+  document.querySelectorAll("#grid > .cell.mpr").forEach(c => c.style.display = STUDY.active ? "none" : "");
+  destroyStudyCells();
+  if (STUDY.active) buildStudyCells(); else layoutCells();
+  $("measure").disabled = STUDY.active;
+  $("spineBtn").disabled = STUDY.active || !spineAvailable();
+  if (STUDY.active && SPINE.mode) spineClear(true); // abandon a half-done seed pick; a traced line survives the round trip
+  if (STUDY.active) setMeasure(false);
+  else if (S.vol){
+    // carry the shared point back into the MPR crosshair
+    if (STUDY.P && S.origin){
+      const [i, j, k] = patToVox(S, STUDY.P);
+      S.ix = clamp(Math.round(i), S.nx-1);
+      S.iy = clamp(Math.round(j), S.ny-1);
+      S.iz = clamp(Math.round(k), S.nz-1);
+    }
+    drawAll();
+  }
+}
+function destroyStudyCells(){
+  document.querySelectorAll("#grid .study-cell").forEach(n => n.remove());
+  STUDY.cells = [];
+}
+function drawStudyAll(){ for (const st of STUDY.cells) st.draw && st.draw(); }
+
+/* Promote a study cell to the primary (hero) view — rendered at max height */
+function setPrimary(st){
+  if (!st) return;
+  STUDY.primaryKey = st.key;
+  document.querySelectorAll(".study-cell").forEach(c => {
+    c.classList.toggle("primary", c === st.cell);
+    c.querySelector(".pin")?.classList.toggle("active", c === st.cell);
+  });
+  layoutCells();
+}
+
+let studyBuildId = 0; // decode is async — a newer build (or destroy) supersedes any in-flight one
+async function buildStudyCells(){
+  const build = ++studyBuildId;
+  const grid = $("grid");
+  // seed the shared point from the MPR crosshair for layout continuity
+  if (S.vol && S.origin) STUDY.P = voxToPat(S, S.ix, S.iy, S.iz);
+  // decode everything, then join series sharing one stack geometry (e.g. sag T1 + T2)
+  // Cross-sectional filter: drop US/color/secondary captures — but never blank
+  // the grid, so fall back to all series if none are tomographic.
+  const tomo = S.seriesList.filter(isTomographic);
+  const seriesForGrid = (STUDY.crossOnly && tomo.length) ? tomo : S.seriesList;
+  const hidden = STUDY.crossOnly ? S.seriesList.length - seriesForGrid.length : 0;
+  const items = [], failed = [];
+  for (const entry of seriesForGrid){
+    try {
+      if (!SUPPORTED_TS.has(entry.ts)) throw new Error(`${TS_NAME[entry.ts] || entry.ts} — not supported`);
+      if (!entry.V) entry.V = await decodeVolume(entry.slices.slice(), entry.ts);
+      if (!entry.win) entry.win = autoWindowOf(entry.V);
+      items.push({ entry, V: entry.V, wc: entry.win.wc, ww: entry.win.ww });
+    } catch(err){ failed.push({ entry, msg: err.message || String(err) }); }
+    if (build !== studyBuildId) return; // superseded while decoding
+  }
+  const groups = new Map();
+  for (const it of items){
+    const g = it.V;
+    const key = [g.nx, g.ny, g.nz, g.origin.map(v => v.toFixed(1)), g.nrm.map(v => v.toFixed(3))].join("|");
+    (groups.get(key) || groups.set(key, []).get(key)).push(it);
+  }
+  const orderedGroups = [...groups.values()].sort((a,b) =>
+    axisOf(a[0].V.nrm) - axisOf(b[0].V.nrm) || a[0].entry.num - b[0].entry.num);
+  for (const variants of orderedGroups){
+    const V = variants[0].V; // shared geometry
+    const st = { variants, cur:0, V, iz: V.nz>>1, userMirror:false, mirror:convFlip(V.rowD), zoom:1, panX:0, panY:0, key: variants.map(v => v.entry.tag).join("+") };
+    const cell = document.createElement("div");
+    cell.className = "cell study-cell";
+    cell.dataset.aspect = (V.nx*V.sx)/(V.ny*V.sy);
+    cell.dataset.nz = V.nz;
+    grid.appendChild(cell);
+    const color = PLANE_COLOR[V.labels.XY] || "#5fd7ff";
+    cell.style.setProperty("--pc", color);
+    const tmax = Math.max(...V.sliceTilt), tmin = Math.min(...V.sliceTilt);
+    const multi = V.slabSegs.length > 1;
+    const angBadge = tmax < 1 ? "" : multi ? `<em class="obl">∠${fmtDeg(tmin)}–${fmtDeg(tmax)}</em>` : oblBadge(tmax);
+    const contrast = it => (it.entry.desc.match(/T1|T2|STIR|TIRM|FLAIR|PD|DWI|Myelo/i) || [it.entry.tag])[0];
+    // Tab labels: the coarse contrast token (T1/T2/…), but when several variants
+    // share the same token (e.g. multiple T1 acquisitions) it alone is useless —
+    // disambiguate those by appending the series tag so every tab is distinct.
+    const tokens = variants.map(contrast);
+    const tabLabel = (it, i) => esc(tokens.filter(t => t === tokens[i]).length > 1 ? `${tokens[i]} ${it.entry.tag}` : tokens[i]);
+    const label = variants.length > 1
+      ? `${V.labels.XY} ×${variants.length}`
+      : `${variants[0].entry.tag} · ${esc(variants[0].entry.desc)} · ${V.labels.XY}`;
+    cell.innerHTML = `
+      <canvas class="slice"></canvas>
+      <div class="tag">${tiltChip(tmax)}<span class="lbl">${label}</span>${angBadge}<em class="raw">ACQUIRED</em></div>
+      ${variants.length > 1 ? `<div class="tabs">${variants.map((it,i) =>
+        `<button data-i="${i}"${i ? "" : ' class="active"'} title="${it.entry.tag} · ${esc(it.entry.desc)}">${tabLabel(it,i)}</button>`).join("")}</div>` : ""}
+      <button class="pin" title="Make this the primary view — max height">◱</button>
+      <button class="mirror" title="Mirror left–right (display only)">⇋</button>
+      <div class="info"></div>
+      <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
+      <input type="range" min="0" max="${V.nz-1}" step="1" value="${st.iz}" aria-label="Slice">`;
+    const cv = cell.querySelector("canvas"), sl = cell.querySelector("input"), info = cell.querySelector(".info");
+    cv.width = V.nx; cv.height = V.ny;
+    cv.style.aspectRatio = `${V.nx*V.sx} / ${V.ny*V.sy}`;
+    cv.dataset.mmw = V.nx*V.sx; cv.dataset.mmh = V.ny*V.sy; // physical extent (mm) for common-scale mode
+    setMarks(cell, st.mirror ? V.rowD.map(x => -x) : V.rowD, V.colD);
+    vpApply(cv, st); // apply the convention flip up-front (before any user zoom/pan)
+    sl.className = "slice-slider " + ("LR".includes(dirLetter(V.nrm)) ? "h" : "v");
+    sl.style.accentColor = color;
+    if (V.nz === 1) sl.style.display = "none";
+    midTick(cell, sl);
+    st.slabCur = null;
+    if (multi){ const bar = buildSlabBar(V.slabSegs, V.nz); cell.appendChild(bar.el); st.slabCur = bar.cur; }
+    const ctx = cv.getContext("2d"), img = ctx.createImageData(V.nx, V.ny);
+    st.draw = () => {
+      const cu = st.variants[st.cur], cV = cu.V;
+      // follow the shared patient-space point
+      if (STUDY.P) st.iz = clamp(Math.round(patToVox(V, STUDY.P)[2]), V.nz-1);
+      st.curNrm = V.sliceNrm ? V.sliceNrm[st.iz] : V.nrm; // this slice's actual normal
+      const lo = cu.wc - cu.ww/2, inv = 255/cu.ww;
+      const base = st.iz*V.nx*V.ny, n = V.nx*V.ny;
+      if (cV.volC) img.data.set(cV.volC.subarray(base*4, (base+n)*4)); // color: as-is
+      else { const put = pixelWriter(img.data);
+        for (let i=0;i<n;i++){
+          let g = ((cV.vol[base+i]*cV.slope + cV.intercept) - lo)*inv;
+          g = g<0 ? 0 : g>255 ? 255 : g;
+          put(i*4, S.invert ? 255-g : g);
+        } }
+      ctx.putImageData(img, 0, 0);
+      if (STUDY.P){
+        // Project the shared point onto THIS slice's actual plane (per-slice for
+        // multi-slab stacks) so the crosshair lands exactly where it should.
+        const useS = !!V.sliceOrigin;
+        const cO = useS ? V.sliceOrigin[st.iz]
+                        : [V.origin[0]+V.nrm[0]*V.sz*st.iz, V.origin[1]+V.nrm[1]*V.sz*st.iz, V.origin[2]+V.nrm[2]*V.sz*st.iz];
+        const cR = useS ? V.sliceRowD[st.iz] : V.rowD;
+        const cC = useS ? V.sliceColD[st.iz] : V.colD;
+        const cN = useS ? V.sliceNrm[st.iz]  : V.nrm;
+        const dP = [STUDY.P[0]-cO[0], STUDY.P[1]-cO[1], STUDY.P[2]-cO[2]];
+        const fi = (dP[0]*cR[0]+dP[1]*cR[1]+dP[2]*cR[2])/V.sx;
+        const fj = (dP[0]*cC[0]+dP[1]*cC[1]+dP[2]*cC[2])/V.sy;
+        const perp = Math.abs(dP[0]*cN[0]+dP[1]*cN[1]+dP[2]*cN[2]); // mm from this slice
+        ctx.save();
+        ctx.lineWidth = Math.max(1, V.nx/500);
+        const L = V.nx + V.ny, drawn = [];
+        for (const o of STUDY.cells){
+          if (o === st || !o.V) continue;
+          const n2 = o.curNrm || o.V.nrm; // the other stack's current-slice normal
+          const t = [ cN[1]*n2[2]-cN[2]*n2[1], cN[2]*n2[0]-cN[0]*n2[2], cN[0]*n2[1]-cN[1]*n2[0] ];
+          if (Math.hypot(...t) < 0.017) continue;      // near-parallel stack (<1°): no intersection
+          let dx = (t[0]*cR[0]+t[1]*cR[1]+t[2]*cR[2])/V.sx, dy = (t[0]*cC[0]+t[1]*cC[1]+t[2]*cC[2])/V.sy;
+          const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+          if (drawn.some(d => Math.abs(d[0]*dx + d[1]*dy) > 0.9995)) continue; // same line already drawn
+          drawn.push([dx, dy]);
+          ctx.globalAlpha = .6;
+          ctx.strokeStyle = PLANE_COLOR[planeOf(n2)] || "#5fd7ff";
+          ctx.beginPath(); ctx.moveTo(fi - dx*L, fj - dy*L); ctx.lineTo(fi + dx*L, fj + dy*L); ctx.stroke();
+        }
+        if (!drawn.length){ // single-orientation study: neutral crosshair for position feedback
+          const px = clamp(Math.round(fi), V.nx-1), py = clamp(Math.round(fj), V.ny-1);
+          ctx.globalAlpha = .35; ctx.strokeStyle = "#8a93a0";
+          ctx.beginPath(); ctx.moveTo(px+.5, 0); ctx.lineTo(px+.5, V.ny); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, py+.5); ctx.lineTo(V.nx, py+.5); ctx.stroke();
+        }
+        if (perp <= V.sz*0.75){ // point lies on (near) this slice
+          ctx.globalAlpha = .95; ctx.fillStyle = "#6f9dc9";
+          ctx.beginPath(); ctx.arc(fi, fj, Math.max(2.5, V.nx/220), 0, 7); ctx.fill();
+        }
+        ctx.restore();
+      }
+      info.textContent = `z ${st.iz+1}/${V.nz} · px ${V.sx.toFixed(2)}×${V.sy.toFixed(2)} mm · W/L ${Math.round(cu.wc)}/${Math.round(cu.ww)}`
+        + (multi ? ` · ∠${fmtDeg((cu.V.sliceTilt || V.sliceTilt)[st.iz] || 0)}` : "");
+      if (st.slabCur && V.nz > 1) st.slabCur.style.left = (st.iz/(V.nz-1)*100) + "%";
+      sl.value = st.iz;
+    };
+    const toVox = e => {
+      const r = cv.getBoundingClientRect();
+      let px = Math.min(V.nx-1, Math.max(0, ((e.clientX-r.left)/r.width*V.nx)|0));
+      if (st.mirror) px = V.nx-1-px;
+      return [ px, Math.min(V.ny-1, Math.max(0, ((e.clientY-r.top)/r.height*V.ny)|0)) ];
+    };
+    const place = e => {
+      const [px, py] = toVox(e);
+      STUDY.P = voxToPat(V, px, py, st.iz);
+      // the clicked view sets the vertical level; the others fall in line to the
+      // same height and stay horizontally in view (the clicked one is left alone)
+      broadcastFocus(st);
+      drawStudyAll();
+    };
+    const setSlice = iz => {
+      st.iz = iz;
+      if (STUDY.P){
+        // move the shared point to this slice, keeping its in-plane position —
+        // geometry-aware so multi-slab stacks track their real slice planes
+        const [i, j] = patToVox(V, STUDY.P);
+        STUDY.P = voxToPat(V, i, j, iz);
+        drawStudyAll();
+      } else st.draw();
+    };
+    sl.oninput = () => setSlice(snapMid(sl));
+    const wst = {};
+    cv.addEventListener("wheel", e => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey){ syncZoom(vpZoomAt(cv, st, e.clientX, e.clientY, wheelZoomFactor(e)), st); broadcastFocus(st); return; }
+      const d = wheelSteps(wst, e);
+      if (d) setSlice(wrap(st.iz+d, V.nz)); // wheel wraps past the ends of the stack
+    }, { passive:false });
+    let wl = null, pan = null;
+    cv.addEventListener("pointerdown", e => {
+      cv.setPointerCapture(e.pointerId);
+      const cu = st.variants[st.cur];
+      if (isPanBtn(e)){ e.preventDefault(); pan = { x:e.clientX, y:e.clientY }; }
+      else if (e.shiftKey) wl = { x:e.clientX, y:e.clientY, wc:cu.wc, ww:cu.ww };
+      else place(e);
+    });
+    cv.addEventListener("pointerleave", () => setProbe("—", "—"));
+    cv.addEventListener("dblclick", () => { vpReset(cv, st); syncZoom(1, st); });
+    cv.addEventListener("pointermove", e => {
+      { const [px, py] = toVox(e), cu = st.variants[st.cur];
+        const off = st.iz*V.nx*V.ny + py*V.nx + px;
+        setProbe(`${px},${py},${st.iz}`, cu.V.volC
+          ? `${cu.V.volC[off*4]}/${cu.V.volC[off*4+1]}/${cu.V.volC[off*4+2]}`
+          : Math.round(cu.V.vol[off]*cu.V.slope + cu.V.intercept)); }
+      if (pan){ vpPan(cv, st, e.clientX-pan.x, e.clientY-pan.y); pan.x = e.clientX; pan.y = e.clientY; broadcastFocus(st); return; }
+      if (!e.buttons) return;
+      if (wl){
+        const cu = st.variants[st.cur], cV = cu.V;
+        const range = (cV.maxV-cV.minV)*cV.slope || 1000;
+        cu.ww = Math.max(1, wl.ww + (e.clientX-wl.x)/300*range);
+        cu.wc = wl.wc + (wl.y-e.clientY)/300*range;
+        st.draw();
+      } else place(e);
+    });
+    cv.addEventListener("pointerup", () => { wl = null; pan = null; });
+    cell.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+      st.cur = +b.dataset.i;
+      cell.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+      st.draw();
+    });
+    const mBtn = cell.querySelector(".mirror");
+    mBtn.classList.toggle("active", st.userMirror);
+    mBtn.onclick = () => {
+      st.userMirror = !st.userMirror;                       // ⇋ is the manual flip on top of the convention
+      st.mirror = convFlip(V.rowD) !== st.userMirror;       // effective = convention XOR user
+      mBtn.classList.toggle("active", st.userMirror);
+      vpApply(cv, st);
+      setMarks(cell, st.mirror ? V.rowD.map(x => -x) : V.rowD, V.colD);
+    };
+    cell.querySelector(".pin").onclick = e => { e.stopPropagation(); setPrimary(st); };
+    st.cell = cell; st.canvas = cv; st.pw = V.nx*V.sx; st.ph = V.ny*V.sy;
+    STUDY.cells.push(st);
+    st.draw();
+  }
+  for (const f of failed){
+    const cell = document.createElement("div");
+    cell.className = "cell study-cell";
+    cell.dataset.aspect = 1;
+    cell.style.setProperty("--pc", "#ff5f5f");
+    cell.innerHTML = `<div class="tag"><span class="lbl">${f.entry.tag} · ${esc(f.entry.desc)}</span><em class="obl">UNSUPPORTED</em></div><div class="info">${esc(f.msg)}</div>`;
+    grid.appendChild(cell);
+  }
+  // primary (hero) view — rendered at max height. Persist the user's pick
+  // across rebuilds by key; otherwise default to the first cell in reading
+  // order (groups are ordered sagittal → coronal → axial), i.e. the survey
+  // plane — but never a single-slice localizer/projection if a volume exists.
+  const primary = STUDY.cells.find(st => st.key === STUDY.primaryKey)
+               || STUDY.cells.find(st => st.V.nz > 1) || STUDY.cells[0];
+  if (primary){
+    STUDY.primaryKey = primary.key;
+    primary.cell.classList.add("primary");
+    primary.cell.querySelector(".pin").classList.add("active");
+  }
+  drawStudyAll(); // localizer lines reference the other stacks — redraw once all cells exist
+  layoutCells();
+  status(hidden ? `${hidden} non-cross-sectional series hidden — uncheck “Cross-sectional only” to show` : "");
+}
+
+/* Even grid of equal viewports (PACS hanging-protocol style): the window is
+   split into equal rows×cols slots and every CELL fills its whole slot, so the
+   grid tiles edge-to-edge with no wasted outer gutters. The image inside each
+   cell is letterboxed to its own aspect ratio by CSS (canvas max-width/height +
+   the cell's flex centering) — the black bars live inside the aligned viewport,
+   not between floating tiles. */
+function gridRects(n, W, H, gap, rows, cols){
+  rows = Math.max(rows, Math.ceil(n/cols)); // never hide a cell if the pick is too small
+  const slotW = (W - gap*(cols-1))/cols, slotH = (H - gap*(rows-1))/rows;
+  const rects = [];
+  for (let i = 0; i < n; i++){
+    const row = (i/cols)|0, col = i%cols;
+    rects[i] = { x: col*(slotW+gap), y: row*(slotH+gap), w: slotW, h: slotH };
+  }
+  return rects;
+}
+
+/* How much of the grid the images actually cover once letterboxed into their
+   slots — used to pick the rows×cols that wastes the least black border. */
+function gridFill(asp, rects){
+  return rects.reduce((s, r, i) => {
+    const a = asp[i], slotA = r.w/r.h;
+    const w = slotA > a ? a*r.h : r.w, h = slotA > a ? r.h : r.w/a;
+    return s + w*h;
+  }, 0);
+}
+
+/* Auto grid: pick the rows×cols split whose equal slots best fit the images
+   (most covered area, least letterboxing). Square-ish views in a square-ish
+   window land on the conventional 2×2 quad; wide thin reformats stack instead.
+   No view is singled out — every viewport is the same size. */
+function autoGrid(cells, asp, W, H, gap){
+  const n = cells.length;
+  let best = null;
+  for (let cols = 1; cols <= n; cols++){
+    const rects = gridRects(n, W, H, gap, Math.ceil(n/cols), cols);
+    const fill = gridFill(asp, rects);
+    if (!best || fill > best.fill) best = { fill, rects };
+  }
+  return best.rects;
+}
+
+/* One layout path for both modes: an even grid of equal viewports that fills the
+   window (auto rows×cols, or a fixed grid the user picked in study mode). */
+function layoutCells(){
+  const grid = $("grid");
+  const cells = STUDY.active
+    ? [...grid.querySelectorAll(".study-cell")]
+    : [...grid.querySelectorAll(".cell.mpr")];
+  if (!cells.length) return;
+  const W = grid.clientWidth, H = grid.clientHeight, gap = 3;
+  if (!W || !H) return;
+  const asp = cells.map(c => Math.max(.1, +c.dataset.aspect || 1));
+  // Manual grid override (study mode) when it has room for every cell; else an
+  // auto even grid sized to fill the window.
+  const m = STUDY.active && /^(\d+)x(\d+)$/.exec(STUDY.gridMode);
+  const rects = (m && (+m[1])*(+m[2]) >= cells.length)
+    ? gridRects(cells.length, W, H, gap, +m[1], +m[2])
+    : autoGrid(cells, asp, W, H, gap);
+  cells.forEach((c, i) => {
+    c.style.left = rects[i].x+"px"; c.style.top = rects[i].y+"px";
+    c.style.width = rects[i].w+"px"; c.style.height = rects[i].h+"px";
+    // size tiers — small tiles shed overlay chrome (see .cell.sm/.xs CSS)
+    c.classList.toggle("sm", rects[i].w < 240 || rects[i].h < 190);
+    c.classList.toggle("xs", rects[i].w < 150 || rects[i].h < 120);
+  });
+  applyScale();
+}
+
+/* Common physical scale: with S.trueScale on, every visible slice view is drawn
+   at the SAME mm-per-pixel so anatomy is directly comparable across cells (a
+   wide-FOV survey no longer looks tiny next to a zoomed-in cross-section). The
+   shared scale is the largest that still lets every image fit its cell; smaller-
+   FOV views then sit centered with margin. Off = each image fills its own cell.
+   Applied as the canvas base size; the pan/zoom transform still composes on top. */
+function applyScale(){
+  const canvases = [...$("grid").querySelectorAll(".cell")]
+    .filter(c => c.clientWidth > 0)
+    .map(c => c.querySelector("canvas.slice"))
+    .filter(cv => cv && cv.dataset.mmw);
+  if (!canvases.length) return;
+  if (!S.trueScale){ canvases.forEach(cv => { cv.style.width = ""; cv.style.height = ""; }); return; }
+  let s = Infinity;
+  for (const cv of canvases){
+    const cell = cv.parentElement;
+    s = Math.min(s, cell.clientWidth / +cv.dataset.mmw, cell.clientHeight / +cv.dataset.mmh);
+  }
+  for (const cv of canvases){
+    cv.style.width = (+cv.dataset.mmw * s) + "px";
+    cv.style.height = (+cv.dataset.mmh * s) + "px";
+  }
+}
+new ResizeObserver(() => layoutCells()).observe($("grid"));
+addEventListener("resize", () => layoutCells()); // fallback for embedded/emulated viewports
+
+/* ============================================================
+   3D — WebGL2 raycast (MIP / composite) via three.js
+   ============================================================ */
+let R3 = null;
+function init3D(){
+  const canvas = $("v3d");
+  if (R3){ R3.dispose(); R3 = null; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, preserveDrawingBuffer:true }); } catch { return no3D(canvas); }
+  if (!renderer.capabilities.isWebGL2){ renderer.dispose(); return no3D(canvas); }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  // Normalized uint8 volume (window applied in shader)
+  const { vol, nx, ny, nz, minV, maxV } = S;
+  const norm = new Uint8Array(vol.length);
+  const scale = 255/((maxV-minV)||1);
+  for (let i=0;i<vol.length;i++) norm[i] = (vol[i]-minV)*scale;
+  const tex = new THREE.DataTexture3D(norm, nx, ny, nz);
+  tex.format = THREE.RedFormat; tex.type = THREE.UnsignedByteType;
+  tex.minFilter = tex.magFilter = THREE.LinearFilter;
+  tex.unpackAlignment = 1; tex.needsUpdate = true;
+
+  const px = nx*S.sx, py = ny*S.sy, pz = nz*S.sz, m = Math.max(px,py,pz);
+  const size = new THREE.Vector3(px/m, py/m, pz/m);
+
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.01, 20);
+  const mat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: {
+      u_data:{ value:tex }, u_size:{ value:size },
+      u_cam:{ value:new THREE.Vector3() },
+      u_bmin:{ value:size.clone().multiplyScalar(-0.5) },
+      u_bmax:{ value:size.clone().multiplyScalar(0.5) },
+      u_voxel:{ value:new THREE.Vector3(size.x/nx, size.y/ny, size.z/nz) },
+      u_lo:{ value:0 }, u_hi:{ value:1 },
+      u_density:{ value:Math.pow(4, $("density3d").value*2-1) },
+      u_steps:{ value:350 }, u_mode:{ value:+$("mode3d").value },
+      u_cmap:{ value:useCmap()?1:0 }, u_invert:{ value:S.invert?1:0 }
+    },
+    vertexShader: `
+      out vec3 vPos;
+      void main(){ vPos = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      precision highp float; precision highp sampler3D;
+      in vec3 vPos; out vec4 outColor;
+      uniform sampler3D u_data; uniform vec3 u_size, u_cam, u_bmin, u_bmax, u_voxel;
+      uniform float u_lo, u_hi, u_density; uniform int u_steps, u_mode, u_cmap, u_invert;
+      vec2 hitBox(vec3 ro, vec3 rd){
+        vec3 inv = 1.0/rd, t0 = (u_bmin-ro)*inv, t1 = (u_bmax-ro)*inv;
+        vec3 tmin = min(t0,t1), tmax = max(t0,t1);
+        return vec2(max(max(tmin.x,tmin.y),tmin.z), min(min(tmax.x,tmax.y),tmax.z));
+      }
+      float win(float s){ return clamp((s-u_lo)/max(u_hi-u_lo,1e-4),0.0,1.0); }
+      float samp(vec3 p){
+        float g = win(texture(u_data, p/u_size + 0.5).r);
+        return u_invert==1 ? 1.0-g : g;
+      }
+      vec3 grad(vec3 p){
+        return vec3(
+          samp(p+vec3(u_voxel.x,0.,0.)) - samp(p-vec3(u_voxel.x,0.,0.)),
+          samp(p+vec3(0.,u_voxel.y,0.)) - samp(p-vec3(0.,u_voxel.y,0.)),
+          samp(p+vec3(0.,0.,u_voxel.z)) - samp(p-vec3(0.,0.,u_voxel.z)));
+      }
+      // polynomial fit of matplotlib inferno (perceptually uniform)
+      vec3 inferno(float t){
+        const vec3 c0 = vec3(0.00021894037,0.0016510046,-0.019480898);
+        const vec3 c1 = vec3(0.10651342,0.56395644,3.9327124);
+        const vec3 c2 = vec3(11.602493,-3.9728540,-15.942394);
+        const vec3 c3 = vec3(-41.703996,17.436399,44.354145);
+        const vec3 c4 = vec3(77.162936,-33.402359,-81.807309);
+        const vec3 c5 = vec3(-71.319428,32.626064,73.209520);
+        const vec3 c6 = vec3(25.131126,-12.242669,-23.070325);
+        return clamp(c0+t*(c1+t*(c2+t*(c3+t*(c4+t*(c5+t*c6))))),0.0,1.0);
+      }
+      vec3 shade(float t){ return u_cmap==1 ? inferno(t) : vec3(t); }
+      void main(){
+        vec3 rd = normalize(vPos - u_cam);
+        vec2 t = hitBox(u_cam, rd);
+        t.x = max(t.x, 0.0);
+        if (t.x >= t.y) discard;
+        float dt = (t.y-t.x)/float(u_steps);
+        vec3 p = u_cam + rd*t.x;
+        float best = 0.0, bestT = t.x;
+        vec4 acc = vec4(0.0);
+        for (int i=0;i<1000;i++){
+          if (i>=u_steps) break;
+          float g = samp(p);
+          if (u_mode==1){
+            if (g > 0.003){
+              vec3 col = shade(g);
+              float a = g*g*0.06*u_density;
+              vec3 gr = grad(p);
+              float gm = length(gr);
+              if (gm > 1e-4){
+                float ndl = abs(dot(gr/gm, rd));           // headlight
+                col = col*(0.35 + 0.65*ndl) + vec3(0.25)*pow(ndl,32.0)*g;
+                a *= 0.2 + 0.8*clamp(gm*8.0, 0.0, 1.0);    // emphasize boundaries
+              }
+              acc.rgb += (1.0-acc.a)*a*col;
+              acc.a   += (1.0-acc.a)*a;
+              if (acc.a > 0.98) break;
+            }
+          } else if (g > best){ best = g; bestT = t.x + float(i)*dt; }
+          p += rd*dt;
+        }
+        if (u_mode==1){
+          if (acc.a < 0.01) discard;
+          outColor = vec4(acc.rgb, 1.0);
+        } else {
+          best = pow(best, u_density);
+          if (best < 0.01) discard;
+          if (u_mode==2){
+            float d = clamp((bestT - t.x)/(0.75*length(u_size)), 0.0, 1.0);
+            vec3 hue = mix(vec3(1.0,0.72,0.30), vec3(0.25,0.55,1.0), d); // warm near, cool far
+            outColor = vec4(hue*best, 1.0);
+          } else outColor = vec4(shade(best), 1.0);
+        }
+      }`,
+    side: THREE.BackSide, transparent: true
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
+  scene.add(mesh);
+
+  // Crosshair-synced clip plane: cut away the camera-side half so you look into the volume
+  const clip = { axis:+$("clip3d").value, pos:new THREE.Vector3() };
+  const setCross = () => clip.pos.set(
+    ((S.ix+0.5)/nx - 0.5)*size.x,
+    ((S.iy+0.5)/ny - 0.5)*size.y,
+    ((S.iz+0.5)/nz - 0.5)*size.z);
+  setCross();
+
+  // Active slice-plane outlines, colored like their 2D views
+  let slicesOn = $("slices3d").classList.contains("active");
+  const mkRect = (axis, color) => {
+    const hx = size.x/2, hy = size.y/2, hz = size.z/2;
+    const pts = axis === 0 ? [[0,-hy,-hz],[0,hy,-hz],[0,hy,hz],[0,-hy,hz]]
+              : axis === 1 ? [[-hx,0,-hz],[hx,0,-hz],[hx,0,hz],[-hx,0,hz]]
+                           : [[-hx,-hy,0],[hx,-hy,0],[hx,hy,0],[-hx,hy,0]];
+    const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
+    const l = new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color, transparent:true, opacity:.8, depthTest:false }));
+    l.renderOrder = 1;
+    scene.add(l);
+    return l;
+  };
+  const rects = [ // plane fixing x ↔ YZ view, y ↔ XZ, z ↔ XY
+    mkRect(0, PLANE_COLOR[S.labels.YZ] || "#5fd7ff"),
+    mkRect(1, PLANE_COLOR[S.labels.XZ] || "#5fd7ff"),
+    mkRect(2, PLANE_COLOR[S.labels.XY] || "#5fd7ff")
+  ];
+  const syncRects = () => {
+    rects[0].position.x = clip.pos.x;
+    rects[1].position.y = clip.pos.y;
+    rects[2].position.z = clip.pos.z;
+    rects.forEach(r => r.visible = slicesOn);
+  };
+  syncRects();
+  $("slices3d").onclick = () => {
+    slicesOn = !slicesOn;
+    $("slices3d").classList.toggle("active", slicesOn);
+    syncRects(); render();
+  };
+  const short = n => ({ AXIAL:"AX", CORONAL:"COR", SAGITTAL:"SAG" })[n] || n;
+  const cs = $("clip3d"); // x fixes YZ view's plane, y XZ's, z XY's
+  cs.options[1].textContent = `Clip ${short(S.labels.YZ)}`;
+  cs.options[2].textContent = `Clip ${short(S.labels.XZ)}`;
+  cs.options[3].textContent = `Clip ${short(S.labels.XY)}`;
+
+  // Patient-axis gizmo (corner overlay): L/R · A/P · S/I letters colored like
+  // the plane each axis pierces — orbits with the camera
+  const gscene = new THREE.Scene();
+  const gcam = new THREE.OrthographicCamera(-1.25, 1.25, 1.25, -1.25, 0.1, 10);
+  const gz = [];
+  for (const [dir, letter, wgt] of [
+    [[1,0,0],"L",1], [[-1,0,0],"R",.5], [[0,1,0],"P",1],
+    [[0,-1,0],"A",.5], [[0,0,1],"S",1], [[0,0,-1],"I",.5]
+  ]){
+    const v = new THREE.Vector3(v3dot(dir, S.rowD), v3dot(dir, S.colD), v3dot(dir, S.nrm));
+    const col = PLANE_COLOR[planeOf(dir)] || "#5fd7ff";
+    const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), v.clone().multiplyScalar(.6)]);
+    const lm = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: .3 + .5*wgt });
+    gscene.add(new THREE.Line(lg, lm));
+    const lc = document.createElement("canvas"); lc.width = lc.height = 64;
+    const c2 = lc.getContext("2d");
+    c2.font = "bold 38px monospace"; c2.textAlign = "center"; c2.textBaseline = "middle";
+    c2.globalAlpha = .45 + .55*wgt; c2.fillStyle = col; c2.fillText(letter, 32, 34);
+    const gtx = new THREE.CanvasTexture(lc);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: gtx, transparent: true, depthTest: false }));
+    sp.position.copy(v.multiplyScalar(.87)); sp.scale.setScalar(.42);
+    gscene.add(sp);
+    gz.push(lg, lm, gtx, sp.material);
+  }
+
+  // Minimal orbit
+  const orbit = { theta: Math.PI/4, phi: Math.PI/2.6, r: 2.4 };
+  const applyCam = () => {
+    const { theta, phi, r } = orbit;
+    cam.position.set(r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.cos(theta));
+    cam.lookAt(0,0,0); cam.updateMatrixWorld();
+    const cl = mat.uniforms.u_cam.value;
+    cl.copy(mesh.worldToLocal(cam.position.clone()));
+    const b0 = mat.uniforms.u_bmin.value.set(-size.x/2, -size.y/2, -size.z/2);
+    const b1 = mat.uniforms.u_bmax.value.set(size.x/2, size.y/2, size.z/2);
+    if (clip.axis >= 0){
+      const ax = "xyz"[clip.axis], c = clip.pos[ax];
+      if (cl[ax] >= c) b1[ax] = Math.max(c, b0[ax]+1e-4);
+      else b0[ax] = Math.min(c, b1[ax]-1e-4);
+    }
+  };
+  let drag = null;
+  canvas.addEventListener("pointerdown", e => { drag = { x:e.clientX, y:e.clientY }; mat.uniforms.u_steps.value = 160; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointermove", e => {
+    if (!drag || !e.buttons) return;
+    orbit.theta -= (e.clientX-drag.x)*0.008;
+    orbit.phi = Math.min(Math.PI-0.05, Math.max(0.05, orbit.phi - (e.clientY-drag.y)*0.008));
+    drag = { x:e.clientX, y:e.clientY }; render();
+  });
+  canvas.addEventListener("pointerup", () => { drag = null; mat.uniforms.u_steps.value = 350; render(); });
+  canvas.addEventListener("wheel", e => { e.preventDefault(); orbit.r = Math.min(6, Math.max(0.8, orbit.r*(1+Math.sign(e.deltaY)*0.08))); render(); }, { passive:false });
+  $("mode3d").onchange = e => { mat.uniforms.u_mode.value = +e.target.value; render(); };
+  $("clip3d").onchange = e => { clip.axis = +e.target.value; render(); };
+  $("density3d").oninput = e => { mat.uniforms.u_density.value = Math.pow(4, e.target.value*2-1); render(); };
+
+  let vw = 2, vh = 2;
+  const resize = () => {
+    const cell = canvas.parentElement, w = cell.clientWidth, h = cell.clientHeight;
+    if (!w || !h) return;
+    vw = w; vh = h;
+    renderer.setSize(w, h, false);
+    cam.aspect = w/h; cam.updateProjectionMatrix(); render();
+  };
+  renderer.autoClear = false;
+  const render = () => {
+    applyCam();
+    renderer.setViewport(0, 0, vw, vh);
+    renderer.clear();
+    renderer.render(scene, cam);
+    const gs = Math.min(92, vw*.3, vh*.3);
+    if (gs > 44){
+      renderer.clearDepth();
+      gcam.position.copy(cam.position).setLength(3);
+      gcam.lookAt(0, 0, 0);
+      renderer.setViewport(4, 4, gs, gs);
+      renderer.render(gscene, gcam);
+      renderer.setViewport(0, 0, vw, vh);
+    }
+  };
+  const ro = new ResizeObserver(resize);
+  ro.observe(canvas.parentElement);
+
+  R3 = {
+    setWindow(loN, hiN){ mat.uniforms.u_lo.value = loN; mat.uniforms.u_hi.value = hiN; render(); },
+    setInvert(inv){ mat.uniforms.u_invert.value = inv ? 1 : 0; render(); },
+    setCmap(v){ mat.uniforms.u_cmap.value = v; render(); },
+    syncCrosshair(){ setCross(); syncRects(); if (clip.axis >= 0 || slicesOn) render(); },
+    dispose(){
+      ro.disconnect(); // else every past series' observer keeps resizing/rendering a disposed renderer
+      rects.forEach(r => { r.geometry.dispose(); r.material.dispose(); });
+      gz.forEach(r => r.dispose());
+      tex.dispose(); mat.dispose(); mesh.geometry.dispose(); renderer.dispose();
+    }
+  };
+  sync3DWindow(); resize();
+}
+function no3D(canvas){
+  let ctx = canvas.getContext("2d");
+  if (!ctx){ // the canvas already holds a WebGL(1) context — swap in a fresh one for 2D text
+    const fresh = canvas.cloneNode(false);
+    canvas.replaceWith(fresh);
+    canvas = fresh;
+    ctx = canvas.getContext("2d");
+  }
+  canvas.width = 400; canvas.height = 100;
+  ctx.fillStyle = "#7d8894"; ctx.font = "12px monospace";
+  ctx.fillText("WebGL2 unavailable — 3D view disabled. 2D MPR still works.", 12, 50);
+}
+function sync3DWindow(){
+  if (!R3) return;
+  const range = (S.maxV-S.minV)*S.slope || 1;
+  const base = S.minV*S.slope + S.intercept;
+  R3.setWindow((S.wc - S.ww/2 - base)/range, (S.wc + S.ww/2 - base)/range);
+}
+</script>
+</body>
+</html>

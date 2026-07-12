@@ -1,0 +1,25 @@
+# ─── Personal medical data — NEVER publish (PHI) ───────────────────────
+# The development/test studies are real patient scans and must stay local.
+/PAT1/
+/DICOMDIR
+/testdata/
+# Loose DICOM files anywhere in the tree (often extensionless — the dir
+# rules above cover those; these catch stray exports).
+*.dcm
+*.DCM
+*.ima
+*.IMA
+
+# ─── Local tooling / editors ───────────────────────────────────────────
+/.claude/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ─── Python (in case a synthetic-data venv is added later) ─────────────
+venv/
+.venv/
+__pycache__/
+*.pyc
