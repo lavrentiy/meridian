@@ -1,6 +1,6 @@
 # Meridian
 
-**A single-file, fully offline DICOM MPR & 3D volume viewer.**
+**A local-first DICOM imaging workstation for study review, MPR, 3D, series management, and research notes.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Single file](https://img.shields.io/badge/build-single%20HTML%20file-black)
@@ -13,15 +13,18 @@
 
 ![Meridian — linked sagittal / coronal / axial MPR](docs/hero.png)
 
-Open [index.html](index.html), drop a study folder on it, and get linked
-axial / coronal / sagittal MPR views plus a WebGL2 raycast 3D volume. No server,
-no upload, no network — everything runs in the tab.
+Open [index.html](index.html) to enter the Meridian workstation. Its routed
+Overview, Viewer, Series, and Notes workspaces stay inside one portable offline
+HTML app. Drop a study folder to get linked axial / coronal / sagittal MPR views
+plus a WebGL2 raycast 3D volume. No upload and no network — everything runs in
+the tab.
 
 ## Quick start
 
 1. Clone or download this repo (keep `lib/` next to `index.html`).
 2. Open `index.html` in a modern browser (WebGL2 required for the 3D view).
-3. Drop a DICOM study folder onto the window, or use **Choose files / folder**.
+3. From **Overview**, drop a DICOM study folder onto the window or use
+   **Choose study folder** / **Select DICOM files**.
 
 You bring your own DICOM data — none ships with the repo (see
 [Test data](#test-data)).
@@ -35,6 +38,11 @@ python3 -m http.server 8137 --bind 127.0.0.1
 
 ## Features
 
+- **Four routed workspaces** — a session overview, focused workstation-style
+  viewer, searchable series inventory, and exportable in-memory research notes.
+  Direct links such as `#viewer` and `#series` restore the intended workspace.
+- **Series manager** — filter by description, modality, or series number; inspect
+  geometry and transfer syntax; launch any series directly into the viewer.
 - **Two layouts** — *MPR + 3D* (linked crosshair through one series) and
   *Acquired series* (every series in its native plane, full resolution).
   Cells auto-pack by aspect ratio, or switch to fixed PACS-style grids (1×1–4×4).
