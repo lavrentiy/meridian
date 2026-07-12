@@ -14,16 +14,16 @@
 <script src="lib/charls-decode.js"></script>
 <style>
   :root{
-    /* Near-black neutral chrome. Plane colors stay semantic and punchy —
-       axial red · coronal green · sagittal yellow · 3D magenta — the only
-       saturated colors in the UI; everything else is quiet. */
-    --bg:#080a0d; --panel:#0e1116; --panel-2:#161a20;
-    --line:#222831; --line-2:#333b45;
-    --text:#dbe1e8; --dim:#828d9b; --faint:#4c5561;
+    /* Warm near-black neutral chrome with an orange accent. Plane colors stay
+       semantic and punchy — axial red · coronal green · sagittal yellow ·
+       3D magenta — the only other saturated colors in the UI; everything
+       else is quiet warm grey. */
+    --bg:#0b0a09; --panel:#141210; --panel-2:#1d1a16;
+    --line:#2a251e; --line-2:#3e372d;
+    --text:#e8e3da; --dim:#9a9285; --faint:#6b6355;
     --red:#ff5f5f; --green:#5fe884; --yellow:#ffd75f;
     --magenta:#ff87d7; --orange:#ffaf5f;
-    /* --cyan kept as a name for the chrome accent (many refs); now a muted steel-blue, not neon */
-    --cyan:#6f9dc9; --accent:#6f9dc9; --accent-rgb:111,157,201;
+    --accent:#f0954e; --accent-rgb:240,149,78;
     --ui:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;
     --mono:"SF Mono","Cascadia Code","JetBrains Mono",Consolas,"DejaVu Sans Mono",monospace;
   }
@@ -33,11 +33,18 @@
   /* monospace reserved for numeric data readouts, not chrome */
   .info,#infoPanel dd,footer#wl b,#cbRange,.tag em,kbd{font-family:var(--mono)}
 
-  /* minmax(0,1fr) column: wide header content must never stretch the grid past the window */
-  #app{display:grid;grid-template-rows:40px minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);height:100vh}
+  /* minmax(0,1fr) column: wide header content must never stretch the grid past the window.
+     Left column is the vertical tool rail; the header row is auto so it may wrap
+     to a second row on narrow windows instead of clipping controls. */
+  #app{display:grid;height:100vh;
+    grid-template:"hd hd" auto "rail grid" minmax(0,1fr) "ft ft" auto / 44px minmax(0,1fr)}
+  header{grid-area:hd} #rail{grid-area:rail} #grid{grid-area:grid} footer#wl{grid-area:ft}
 
-  /* ── header ───────────────────────────────────────────── */
-  header{display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);overflow:hidden}
+  /* ── header: identity + patient context + "what am I looking at" selects ── */
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:40px;padding:5px 10px;
+    background:var(--panel);border-bottom:1px solid var(--line)}
+  header button,header select{white-space:nowrap}
+  @media (max-width:1000px){ header h1 span{display:none} }
   header h1{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;letter-spacing:.005em;color:var(--text);white-space:nowrap}
   header h1 span{color:var(--dim);font-weight:400;font-size:11px;letter-spacing:.01em}
   header h1 span::before{content:"";display:inline-block;width:1px;height:11px;background:var(--line-2);margin-right:9px;vertical-align:-1px}
@@ -48,51 +55,88 @@
   .mark .m-ax{stroke:var(--red)} .mark .m-cor{stroke:var(--green)} .mark .m-sag{stroke:var(--yellow)}
   .mark .hub{fill:var(--accent)}
   .mark.big{width:60px;height:60px;margin-bottom:18px}
-  #meta{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  /* patient identity must survive width pressure: it may truncate but never vanish */
+  #meta{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:110px;flex:0 1 auto}
   #meta b{color:var(--text);font-weight:600}
   #meta span::before{content:"·";color:var(--faint);margin:0 6px}
   header .spacer,footer .spacer{flex:1}
   .sep{width:1px;height:16px;background:var(--line);flex:none}
 
+  /* ── vertical tool rail: toggles + one-shot tools as icon buttons ── */
+  #rail{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 0;
+    background:var(--panel);border-right:1px solid var(--line)}
+  #rail button{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:11px;font-weight:600;letter-spacing:.02em}
+  #rail button:hover{color:var(--text)}
+  #rail button.active{color:var(--accent)}
+  #rail svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:block}
+  #rail .rsep{width:18px;height:1px;background:var(--line-2);margin:3px 0;flex:none}
+  #rail .rspace{flex:1}
+
+  /* ── settings popover (anchored to the rail foot) ── */
+  #settingsPop{position:fixed;left:52px;bottom:38px;z-index:8;min-width:210px;
+    background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;
+    display:flex;flex-direction:column;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.55)}
+  #settingsPop[hidden]{display:none}
+  #settingsPop .set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    font-size:11px;color:var(--dim);white-space:nowrap}
+  #settingsPop .set-row:has(> [hidden]){display:none}
+  #settingsPop select{min-width:110px}
+
+  /* ── keyboard / mouse reference overlay ── */
+  #helpOverlay{position:fixed;inset:0;z-index:11;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center}
+  #helpOverlay[hidden]{display:none}
+  #helpOverlay .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:8px;
+    padding:18px 22px;max-width:640px;max-height:80vh;overflow-y:auto;
+    display:grid;grid-template-columns:1fr 1fr;gap:4px 28px}
+  #helpOverlay h3{grid-column:1/-1;color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:3px;margin:10px 0 4px}
+  #helpOverlay h3:first-child{margin-top:0}
+  #helpOverlay .sc{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:11px;color:var(--dim)}
+  #helpOverlay .sc b{color:var(--text);font-weight:500}
+  #helpOverlay .close{grid-column:1/-1;text-align:center;font-size:10px;color:var(--faint);margin-top:8px}
+
   button,select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:6px;
     padding:5px 10px;font-size:12px;font-weight:500;letter-spacing:0;cursor:pointer;font-family:var(--ui);
     transition:background-color .1s ease,border-color .1s ease}
   select{appearance:none;padding-right:20px;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%237f8b99' fill='none'/%3E%3C/svg%3E");
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%23988f80' fill='none'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 6px center}
   /* hover lifts the fill + border (GitHub model), never recolors the label */
   button:hover,select:hover{background-color:var(--line);border-color:var(--faint)}
-  button.primary{background-color:var(--accent);border-color:var(--accent);color:#0a0e13;font-weight:600}
-  button.primary:hover{background-color:#83abd2;border-color:#83abd2}
-  button.active{background-color:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
-  button.active:hover{background-color:rgba(var(--accent-rgb),.24);border-color:var(--cyan)}
-  button:disabled{opacity:.4;pointer-events:none}
-  #seriesSel{color:var(--green);border-color:#2b4634;max-width:340px;min-width:0}
-  #seriesSel:hover{border-color:#3f6b4d}   /* keep the green identity on hover, just brighter */
+  button.primary{background-color:var(--accent);border-color:var(--accent);color:#1a1208;font-weight:600}
+  button.primary:hover{background-color:#f5a869;border-color:#f5a869}
+  button.active{background-color:rgba(var(--accent-rgb),.16);border-color:var(--accent);color:var(--accent)}
+  button.active:hover{background-color:rgba(var(--accent-rgb),.24);border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:default}  /* no pointer-events:none — the title tooltip must still explain WHY */
+  #seriesSel{color:var(--accent);border-color:#5a4326;max-width:340px;min-width:150px}
+  #seriesSel:hover{border-color:#7d5c34}   /* keep the orange identity on hover, just brighter */
   #crossOnly{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);white-space:nowrap;cursor:pointer}
-  #crossOnly input{accent-color:var(--cyan);cursor:pointer;margin:0}
+  #crossOnly input{accent-color:var(--accent);cursor:pointer;margin:0}
   #crossOnly[hidden]{display:none}
   .cell.mpr .rot{position:absolute;top:4px;right:6px;z-index:3;width:22px;height:22px;padding:0;
     display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;border-radius:50%;
-    background:rgba(10,12,15,.7);opacity:0;transition:opacity .12s;cursor:grab}
+    background:rgba(14,12,10,.7);opacity:0;transition:opacity .12s;cursor:grab}
   .cell.mpr:hover .rot{opacity:.75}
-  .cell.mpr .rot:hover{opacity:1;color:var(--cyan);border-color:var(--cyan)}
+  .cell.mpr .rot:hover{opacity:1;color:var(--accent);border-color:var(--accent)}
   .cell.mpr.rolled .rot{opacity:1;color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),.16)}
-  .cell.mpr.rolled{box-shadow:inset 0 0 0 1px var(--cyan)}
-  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+  .cell.mpr.rolled{box-shadow:inset 0 0 0 1px var(--accent)}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
   /* ── viewport grid — cells packed by aspect ratio (JS), zero dead space ── */
   #grid{position:relative;min-height:0;background:var(--bg);overflow:hidden}
   .cell{position:absolute;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;
-    border:1px solid var(--line);border-color:color-mix(in srgb,var(--pc,#39424e) 32%,#0b0d10)}
+    border:1px solid var(--line);border-color:color-mix(in srgb,var(--pc,#3e372d) 32%,#0d0c0a)}
   .cell canvas.slice{max-width:100%;max-height:100%;image-rendering:auto;cursor:crosshair;touch-action:none}
   #v3d{touch-action:none}
 
   /* view tag: plane-colored, chip square rotates by the acquisition tilt */
   .tag{position:absolute;top:0;left:0;display:flex;align-items:center;gap:7px;padding:3px 9px 3px 7px;
-    font-size:11px;letter-spacing:.03em;pointer-events:none;color:var(--pc,var(--cyan));max-width:100%;
-    background:rgba(0,0,0,.62);border-left:2px solid var(--pc,var(--cyan));border-bottom-right-radius:4px;z-index:2}
+    font-size:11px;letter-spacing:.03em;pointer-events:none;color:var(--pc,var(--accent));max-width:100%;
+    background:rgba(0,0,0,.62);border-left:2px solid var(--pc,var(--accent));border-bottom-right-radius:4px;z-index:2}
   .study-cell .tag{max-width:calc(100% - 82px)} /* keep clear of the ◱/⇋ buttons top-right */
+  .cell.cpr .tag{max-width:calc(100% - 122px)}  /* keep clear of the Levels ▲▼ control top-right */
   .tag .lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tag i{width:8px;height:8px;border:1.5px solid currentColor;flex:none}
   .tag em{font-style:normal;font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;border:1px solid;flex:none;white-space:nowrap}
@@ -127,47 +171,47 @@
 
   /* spine seed-picking prompt, floating over the grid */
   #spineHint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;pointer-events:none;
-    background:rgba(8,10,13,.92);border:1px solid var(--magenta);color:var(--magenta);
+    background:rgba(12,10,8,.92);border:1px solid var(--magenta);color:var(--magenta);
     padding:5px 14px;border-radius:4px;font-size:11px;letter-spacing:.06em;white-space:nowrap}
 
   .info{position:absolute;bottom:6px;left:8px;font-size:10px;color:var(--dim);pointer-events:none;text-shadow:0 1px 2px #000,0 0 4px #000;z-index:2}
   .info.r{left:auto;right:8px}
-  .om{position:absolute;font-size:10px;font-weight:700;color:#9fb2c3;opacity:.85;pointer-events:none;text-shadow:0 1px 2px #000;z-index:1}
+  .om{position:absolute;font-size:10px;font-weight:700;color:#b5ac9e;opacity:.85;pointer-events:none;text-shadow:0 1px 2px #000;z-index:1}
   .om.t{top:5px;left:50%;transform:translateX(-50%)}
   .om.b{bottom:24px;left:50%;transform:translateX(-50%)}
   .om.l{left:6px;top:50%;transform:translateY(-50%)}
   .om.r{right:24px;top:50%;transform:translateY(-50%)}
 
-  .slice-slider{position:absolute;accent-color:var(--pc,var(--cyan));opacity:.65;margin:0;z-index:3}
+  .slice-slider{position:absolute;accent-color:var(--pc,var(--accent));opacity:.65;margin:0;z-index:3}
   .slice-slider:hover,.slice-slider:focus-visible{opacity:1}
   .slice-slider.v{right:2px;top:14px;height:calc(100% - 28px);width:20px;writing-mode:vertical-lr;direction:rtl}
   .slice-slider.h{left:14px;bottom:2px;width:calc(100% - 28px);height:20px}
   .cell:has(.slice-slider.h) .info{bottom:24px}
   /* center-slice detent marker: a tick at the geometric middle of the scrollbar */
-  .midtick{position:absolute;z-index:3;pointer-events:none;background:var(--pc,var(--cyan));opacity:.8;box-shadow:0 0 3px #000;border-radius:1px}
+  .midtick{position:absolute;z-index:3;pointer-events:none;background:var(--pc,var(--accent));opacity:.8;box-shadow:0 0 3px #000;border-radius:1px}
   .midtick.v{right:2px;top:calc(50% - 1.5px);width:20px;height:3px}
   .midtick.h{bottom:2px;left:calc(50% - 1.5px);width:3px;height:20px}
   .cell.xs .midtick{display:none}
   .cell.xs:hover .midtick{display:block}
 
   .tabs{position:absolute;top:24px;left:0;display:flex;z-index:3}
-  .tabs button{padding:2px 8px;font-size:10px;border-radius:0;border-left-width:0;background:rgba(10,12,15,.85)}
+  .tabs button{padding:2px 8px;font-size:10px;border-radius:0;border-left-width:0;background:rgba(14,12,10,.85)}
   .tabs button:first-child{border-left-width:1px;border-radius:6px 0 0 6px}
   .tabs button:last-child{border-radius:0 6px 6px 0}
   .tabs button.active{background:rgba(var(--accent-rgb),.18)}
   /* CPR level-label control (straightened-spine cell only) */
   .cell.cpr .levelctl{position:absolute;top:4px;right:26px;z-index:3;display:flex;gap:3px}
-  .cell.cpr .levelctl button{padding:2px 6px;font-size:10px;text-transform:none;background:rgba(10,12,15,.82)}
-  .cell.cpr .levelctl button.on{background:rgba(var(--accent-rgb),.18);border-color:var(--cyan);color:var(--cyan)}
+  .cell.cpr .levelctl button{padding:2px 6px;font-size:10px;text-transform:none;background:rgba(14,12,10,.82)}
+  .cell.cpr .levelctl button.on{background:rgba(var(--accent-rgb),.18);border-color:var(--accent);color:var(--accent)}
   .cell.cpr.sm .levelctl{display:none}
   .cell.cpr.sm:hover .levelctl{display:flex}
-  button.mirror{position:absolute;top:4px;right:26px;z-index:3;padding:2px 7px;font-size:11px;text-transform:none;background:rgba(10,12,15,.7)}
-  button.pin{position:absolute;top:4px;right:52px;z-index:3;padding:2px 6px;font-size:11px;text-transform:none;background:rgba(10,12,15,.7)}
-  button.pin.active{background:rgba(var(--accent-rgb),.16);border-color:var(--cyan);color:var(--cyan)}
+  button.mirror{position:absolute;top:4px;right:26px;z-index:3;padding:2px 7px;font-size:11px;text-transform:none;background:rgba(14,12,10,.7)}
+  button.pin{position:absolute;top:4px;right:52px;z-index:3;padding:2px 6px;font-size:11px;text-transform:none;background:rgba(14,12,10,.7)}
+  button.pin.active{background:rgba(var(--accent-rgb),.16);border-color:var(--accent);color:var(--accent)}
   /* the primary / hero view — brighter plane-colored frame (both layouts) */
-  .cell.primary{border-color:var(--pc,var(--cyan))!important;box-shadow:inset 0 0 0 1px var(--pc,var(--cyan)),0 0 12px -6px var(--pc,var(--cyan))}
+  .cell.primary{border-color:var(--pc,var(--accent))!important;box-shadow:inset 0 0 0 1px var(--pc,var(--accent)),0 0 12px -6px var(--pc,var(--accent))}
   .cell.primary .tag{background:rgba(0,0,0,.72)}
-  .study-cell.primary .tag::after{content:"PRIMARY";font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;color:var(--pc,var(--cyan));border:1px solid currentColor}
+  .study-cell.primary .tag::after{content:"PRIMARY";font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;color:var(--pc,var(--accent));border:1px solid currentColor}
 
   #v3d{display:block;width:100%;height:100%}
   .tools3d{position:absolute;top:5px;right:6px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;
@@ -176,7 +220,7 @@
 
   /* ── info panel ── */
   #infoPanel{position:fixed;top:44px;right:6px;bottom:34px;width:330px;overflow-y:auto;z-index:6;
-    background:rgba(8,10,13,.96);border:1px solid var(--line-2);border-radius:4px;padding:10px 12px}
+    background:rgba(12,10,8,.96);border:1px solid var(--line-2);border-radius:4px;padding:10px 12px}
   #infoPanel h3{color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 5px;
     border-bottom:1px solid var(--line);padding-bottom:3px}
   #infoPanel h3:first-child{margin-top:0}
@@ -201,11 +245,11 @@
   /* ── status bar ── */
   footer#wl{display:none;align-items:center;gap:14px;padding:5px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
   footer#wl.show{display:flex}
-  footer#wl b{color:var(--cyan);font-weight:600}
+  footer#wl b{color:var(--accent);font-weight:600}
   footer#wl #pVal{color:var(--green)}
   #cbar{width:130px;height:10px;border:1px solid var(--line-2);border-radius:2px;flex:none}
   kbd{border:1px solid var(--line-2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--text);background:var(--panel-2)}
-  .hints{display:flex;gap:12px;color:var(--faint)}
+  #hintTip{color:var(--dim);flex:none}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -221,45 +265,39 @@
       <option value="mpr">MPR + 3D</option>
     </select>
     <select id="seriesSel" title="Acquired series — switch the active volume" hidden></select>
-    <select id="gridSel" title="Tile grid" hidden>
-      <option value="auto">Auto grid</option>
-      <option value="1x1">1 × 1</option>
-      <option value="2x1">2 × 1</option>
-      <option value="1x2">1 × 2</option>
-      <option value="2x2">2 × 2</option>
-      <option value="2x3">2 × 3</option>
-      <option value="3x2">3 × 2</option>
-      <option value="3x3">3 × 3</option>
-      <option value="4x4">4 × 4</option>
-    </select>
-    <label id="crossOnly" title="Hide US / color / secondary-capture series — they have no cross-sectional geometry" hidden>
-      <input type="checkbox" checked> Cross-sectional only
-    </label>
     <span class="sep"></span>
-    <!-- appearance: how it looks -->
     <select id="preset" title="Window preset">
       <option value="auto">Auto window</option>
       <option value="stored">Stored (DICOM)</option>
       <option value="narrow">Narrow (soft detail)</option>
       <option value="wide">Wide (full range)</option>
     </select>
-    <select id="cmapSel" title="Colormap for all views">
-      <option value="0">Gray</option>
-      <option value="1">Inferno</option>
-    </select>
-    <button id="invert" title="Invert grayscale (I)">Invert</button>
-    <button id="scaleBtn" class="active" title="Show every view at the same physical scale (mm) so anatomy is comparable across cells — off = each view fills its own cell">Scale 1:1</button>
-    <button id="linkZoom" class="active" title="Zoom all views together, centered on the shared crosshair, and keep them level — off = zoom each view independently">Link zoom</button>
-    <button id="convBtn" class="active" title="L/R display convention. Neuro = patient-left on the viewer's left (mirror-like, less confusing). Radiological = patient-left on the viewer's right (native scan geometry). Sagittal views are unaffected.">Neuro</button>
-    <span class="sep"></span>
-    <!-- tools -->
-    <button id="measure" title="Drag on a slice to measure distance in mm (M)">Measure</button>
-    <button id="spineBtn" title="Trace the spinal canal: click it at the top, then at the bottom (sagittal T2 works best) — builds a straightened-spine CPR view. Click again to clear.">Spine</button>
-    <button id="snap" title="Save all views as one PNG">Snapshot</button>
-    <button id="infoBtn" title="Patient, study, series & slicing details">Info</button>
     <span class="sep"></span>
     <button id="reload" class="primary">Open…</button>
   </header>
+
+  <!-- vertical tool rail: display toggles above, one-shot tools below, settings + help at the foot -->
+  <nav id="rail" aria-label="Tools">
+    <button id="invert" aria-pressed="false" title="Invert grayscale (I)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" stroke="none"/></svg></button>
+    <button id="scaleBtn" class="active" aria-pressed="true" title="Show every view at the same physical scale (mm) so anatomy is comparable across cells — off = each view fills its own cell">1:1</button>
+    <button id="linkZoom" class="active" aria-pressed="true" title="Zoom all views together, centered on the shared crosshair, and keep them level — off = zoom each view independently">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 9.8 9.8 6.2"/><path d="M7.3 4.6 8.8 3.1a3.1 3.1 0 0 1 4.4 4.4L11.7 9"/><path d="M8.7 11.4 7.2 12.9a3.1 3.1 0 0 1-4.4-4.4L4.3 7"/></svg></button>
+    <button id="convBtn" title="L/R display convention — currently Neuro: patient-left on the viewer's left (mirror-like). Click for Radiological: patient-left on the viewer's right (native scan geometry). Sagittal views are unaffected.">N</button>
+    <span class="rsep"></span>
+    <button id="measure" aria-pressed="false" title="Drag on a slice to measure distance in mm (M)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 10.6 10.6 2.2l3.2 3.2-8.4 8.4z"/><path d="m5 8 1.4 1.4"/><path d="m7.4 5.6 1.4 1.4"/><path d="m9.8 3.2 1.4 1.4"/></svg></button>
+    <button id="spineBtn" aria-pressed="false" title="Trace the spinal canal: click it at the top, then at the bottom (sagittal T2 works best) — builds a straightened-spine CPR view. Click again to clear.">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.6 1.5c-2.4 1.6 1.6 3-.6 4.8s1.6 3-.6 4.8 1.4 2.6-.4 3.9"/><circle cx="8.1" cy="3.8" r=".7" fill="currentColor" stroke="none"/><circle cx="7.6" cy="8.3" r=".7" fill="currentColor" stroke="none"/><circle cx="7.1" cy="12.6" r=".7" fill="currentColor" stroke="none"/></svg></button>
+    <button id="snap" title="Save all views as one PNG">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 5.4h2.7l1.4-1.9h4.2l1.4 1.9h2.7v7.5H1.8z"/><circle cx="8" cy="8.9" r="2.3"/></svg></button>
+    <button id="infoBtn" aria-pressed="false" title="Patient, study, series & slicing details">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r=".8" fill="currentColor" stroke="none"/></svg></button>
+    <span class="rspace"></span>
+    <button id="settingsBtn" aria-pressed="false" title="Display settings — colormap, tile grid, series filter">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12"/><circle cx="10.5" cy="4.5" r="1.7" fill="var(--panel)"/><circle cx="5" cy="8" r="1.7" fill="var(--panel)"/><circle cx="11.5" cy="11.5" r="1.7" fill="var(--panel)"/></svg></button>
+    <button id="helpBtn" title="Mouse, touch & keyboard reference (?)">?</button>
+  </nav>
 
   <div id="grid">
     <div id="spineHint" hidden></div>
@@ -303,23 +341,63 @@
     <span>POS <b id="pPos">—</b></span>
     <span>VAL <b id="pVal">—</b></span>
     <span class="spacer"></span>
-    <span class="hints">
-      <span><kbd>drag</kbd> crosshair</span>
-      <span><kbd>⇧drag</kbd> W/L</span>
-      <span><kbd>wheel</kbd> slice</span>
-      <span><kbd>⌃/⌘wheel</kbd> zoom</span>
-      <span><kbd>pinch</kbd> zoom</span>
-      <span><kbd>W/S·A/D</kbd> W/L</span>
-      <span><kbd>middle/⌥drag</kbd> pan</span>
-      <span><kbd>dbl-click</kbd> reset</span>
-      <span><kbd>⟳ handle</kbd> oblique tilt</span>
-      <span><kbd>M</kbd> measure</span>
-      <span><kbd>I</kbd> invert</span>
-    </span>
+    <span id="hintTip"><kbd>?</kbd> controls</span>
   </footer>
 </div>
 
 <div id="infoPanel" hidden></div>
+
+<!-- display settings popover, anchored to the rail foot -->
+<div id="settingsPop" hidden>
+  <div class="set-row"><span>Colormap</span>
+    <select id="cmapSel" title="Colormap for all views">
+      <option value="0">Gray</option>
+      <option value="1">Inferno</option>
+    </select></div>
+  <div class="set-row"><span>Tile grid</span>
+    <select id="gridSel" title="Tile grid" hidden>
+      <option value="auto">Auto grid</option>
+      <option value="1x1">1 × 1</option>
+      <option value="2x1">2 × 1</option>
+      <option value="1x2">1 × 2</option>
+      <option value="2x2">2 × 2</option>
+      <option value="2x3">2 × 3</option>
+      <option value="3x2">3 × 2</option>
+      <option value="3x3">3 × 3</option>
+      <option value="4x4">4 × 4</option>
+    </select></div>
+  <label id="crossOnly" title="Hide US / color / secondary-capture series — they have no cross-sectional geometry" hidden>
+    <input type="checkbox" checked> Cross-sectional only
+  </label>
+</div>
+
+<!-- mouse / touch / keyboard reference (? key, rail button) -->
+<div id="helpOverlay" hidden>
+  <div class="panel" role="dialog" aria-label="Controls reference">
+    <h3>Mouse</h3>
+    <div class="sc"><b>move crosshair</b><span><kbd>drag</kbd></span></div>
+    <div class="sc"><b>window / level</b><span><kbd>⇧</kbd> <kbd>drag</kbd></span></div>
+    <div class="sc"><b>scroll slices</b><span><kbd>wheel</kbd></span></div>
+    <div class="sc"><b>zoom</b><span><kbd>⌃/⌘</kbd> <kbd>wheel</kbd></span></div>
+    <div class="sc"><b>pan</b><span><kbd>middle</kbd> or <kbd>⌥</kbd> <kbd>drag</kbd></span></div>
+    <div class="sc"><b>reset view</b><span><kbd>double-click</kbd></span></div>
+    <div class="sc"><b>oblique tilt</b><span><kbd>⟳ handle</kbd> drag</span></div>
+    <div class="sc"><b>3D orbit</b><span><kbd>drag</kbd> in 3D view</span></div>
+    <h3>Touch</h3>
+    <div class="sc"><b>move crosshair</b><span><kbd>drag</kbd></span></div>
+    <div class="sc"><b>zoom</b><span><kbd>pinch</kbd></span></div>
+    <h3>Keyboard</h3>
+    <div class="sc"><b>measure</b><span><kbd>M</kbd></span></div>
+    <div class="sc"><b>invert grayscale</b><span><kbd>I</kbd></span></div>
+    <div class="sc"><b>window wider / narrower</b><span><kbd>W</kbd> <kbd>S</kbd></span></div>
+    <div class="sc"><b>level down / up</b><span><kbd>A</kbd> <kbd>D</kbd></span></div>
+    <div class="sc"><b>step slices</b><span><kbd>↑</kbd> <kbd>↓</kbd></span></div>
+    <div class="sc"><b>jump 5 slices</b><span><kbd>PgUp</kbd> <kbd>PgDn</kbd></span></div>
+    <div class="sc"><b>cancel / close</b><span><kbd>Esc</kbd></span></div>
+    <div class="sc"><b>this panel</b><span><kbd>?</kbd></span></div>
+    <div class="close">click anywhere or press <kbd>Esc</kbd> to close</div>
+  </div>
+</div>
 
 <div id="drop">
   <div class="box" id="dropbox">
@@ -357,6 +435,8 @@ const S = {
 
 const $ = id => document.getElementById(id);
 const status = m => { $("status").textContent = m || ""; };
+/* toggle-button state: visual .active + aria-pressed always move together */
+const press = (btn, on) => { btn.classList.toggle("active", on); btn.setAttribute("aria-pressed", String(on)); };
 
 /* ============================================================
    Loading & parsing
@@ -654,7 +734,7 @@ async function loadSeries(idx){
       throw new Error(`${entry.tag} uses transfer syntax ${TS_NAME[entry.ts] || entry.ts}, which is not supported.\nSupported: uncompressed, RLE, JPEG Lossless, JPEG-LS, JPEG 2000, 8-bit JPEG baseline.`);
     await buildVolume(entry.slices.slice(), entry.ts);
     for (const k in views) views[k].ruler = null;
-    $("invert").classList.toggle("active", S.invert);
+    press($("invert"), S.invert);
     initViews();
     S.curIdx = idx;
     $("drop").classList.add("hide");
@@ -936,6 +1016,7 @@ const views = {
 function initViews(){
   spineClear(true); // the centerline lives in the previous volume's space
   $("spineBtn").disabled = STUDY.active || !spineAvailable();
+  syncToolTitles();
   const { nx, ny, nz, sx, sy, sz } = S;
   setup("XY", nx, ny, nx*sx, ny*sy, nz-1, S.iz);
   setup("XZ", nx, nz, nx*sx, nz*sz, ny-1, S.iy);
@@ -974,7 +1055,7 @@ function setup(k, w, h, pw, ph, max, val){
   v.s.max = max; v.s.value = val;
   // XY planes are the pixel arrays as acquired; XZ/YZ are reformatted from the stack
   const raw = k === "XY";
-  const color = PLANE_COLOR[S.labels[k]] || "#5fd7ff";
+  const color = PLANE_COLOR[S.labels[k]] || "#f0954e";
   cell.style.setProperty("--pc", color);
   const multi = raw && S.slabSegs && S.slabSegs.length > 1;
   const tmax = S.sliceTilt ? Math.max(...S.sliceTilt) : (S.rowD ? tiltOf(S) : 0);
@@ -1179,9 +1260,9 @@ function cross(ctx, c, px, py, k){
   const [vk, hk] = CROSS_LINK[k];
   ctx.save();
   ctx.lineWidth = Math.max(1, c.width/500); ctx.globalAlpha = .55;
-  ctx.strokeStyle = PLANE_COLOR[S.labels[vk]] || "#5fd7ff";
+  ctx.strokeStyle = PLANE_COLOR[S.labels[vk]] || "#f0954e";
   ctx.beginPath(); ctx.moveTo(px+.5,0); ctx.lineTo(px+.5,c.height); ctx.stroke();
-  ctx.strokeStyle = PLANE_COLOR[S.labels[hk]] || "#5fd7ff";
+  ctx.strokeStyle = PLANE_COLOR[S.labels[hk]] || "#f0954e";
   ctx.beginPath(); ctx.moveTo(0,py+.5); ctx.lineTo(c.width,py+.5); ctx.stroke();
   ctx.restore();
 }
@@ -1521,14 +1602,22 @@ const wrap = (v, n) => ((v % n) + n) % n; // slice-index wrap-around (n = stack 
    ============================================================ */
 function setMeasure(on){
   S.measure = on;
-  $("measure").classList.toggle("active", on);
+  press($("measure"), on);
   if (!on){ for (const k in views) views[k].ruler = null; drawAll(); }
+}
+/* disabled tools keep a tooltip that says WHY (disabled buttons still show title) */
+const TITLE_MEASURE = $("measure").title, TITLE_SPINE = $("spineBtn").title;
+function syncToolTitles(){
+  $("measure").title = $("measure").disabled ? "Measure — available in the MPR + 3D layout" : TITLE_MEASURE;
+  $("spineBtn").title = !$("spineBtn").disabled ? TITLE_SPINE
+    : STUDY.active ? "Spine — available in the MPR + 3D layout"
+    : "Spine — needs a single-stack series (a multi-angle series can't be straightened without shear)";
 }
 $("measure").onclick = () => setMeasure(!S.measure);
 
 function toggleInvert(){
   S.invert = !S.invert;
-  $("invert").classList.toggle("active", S.invert);
+  press($("invert"), S.invert);
   drawAll(); drawStudyAll();
   if (R3) R3.setInvert(S.invert);
 }
@@ -1536,13 +1625,13 @@ $("invert").onclick = toggleInvert;
 
 $("scaleBtn").onclick = () => {
   S.trueScale = !S.trueScale;
-  $("scaleBtn").classList.toggle("active", S.trueScale);
+  press($("scaleBtn"), S.trueScale);
   layoutCells(); // re-applies the (shared or per-cell) canvas scale
 };
 
 $("linkZoom").onclick = () => {
   STUDY.linkZoom = !STUDY.linkZoom;
-  $("linkZoom").classList.toggle("active", STUDY.linkZoom);
+  press($("linkZoom"), STUDY.linkZoom);
   // adopt the active view's zoom across the rest so they immediately match
   if (STUDY.linkZoom){
     if (STUDY.active && STUDY.cells.length) syncZoom(STUDY.cells[0].zoom || 1, null);
@@ -1550,12 +1639,16 @@ $("linkZoom").onclick = () => {
   }
 };
 
+/* two-value control, not an on/off toggle: the letter IS the state (N = neuro, R = radiological) */
 $("convBtn").onclick = () => {
   S.neuro = !S.neuro;
   const b = $("convBtn");
-  b.textContent = S.neuro ? "Neuro" : "Radio";
-  b.classList.toggle("active", S.neuro);
+  b.textContent = S.neuro ? "N" : "R";
+  b.title = S.neuro
+    ? "L/R display convention — currently Neuro: patient-left on the viewer's left (mirror-like). Click for Radiological. Sagittal views are unaffected."
+    : "L/R display convention — currently Radiological: patient-left on the viewer's right (native scan geometry). Click for Neuro. Sagittal views are unaffected.";
   applyConvention();
+  if (R3) R3.setHome(S.neuro); // 3D reset view follows the convention (posterior for neuro, anterior for radiological)
 };
 
 $("cmapSel").onchange = () => {
@@ -1594,10 +1687,32 @@ $("snap").onclick = () => {
   a.click();
 };
 
+/* ── settings popover + controls-reference overlay ── */
+function toggleSettings(force){
+  const show = force !== undefined ? force : $("settingsPop").hidden;
+  $("settingsPop").hidden = !show;
+  press($("settingsBtn"), show);
+}
+$("settingsBtn").onclick = e => { e.stopPropagation(); toggleSettings(); };
+addEventListener("pointerdown", e => { // click-away closes the popover
+  if (!$("settingsPop").hidden && !$("settingsPop").contains(e.target) && !$("settingsBtn").contains(e.target))
+    toggleSettings(false);
+});
+function toggleHelp(force){
+  const o = $("helpOverlay");
+  o.hidden = force !== undefined ? !force : !o.hidden;
+}
+$("helpBtn").onclick = () => toggleHelp();
+$("helpOverlay").onclick = () => toggleHelp(false);
+
 addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("helpOverlay").hidden) return toggleHelp(false);
+  if (e.key === "Escape" && !$("settingsPop").hidden) return toggleSettings(false);
   if (e.key === "Escape" && S.vol && !$("drop").classList.contains("hide")) return hideDrop();
   if (e.key === "Escape" && !$("infoPanel").hidden) return toggleInfo(false);
-  if (!S.vol || e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.key === "?") return toggleHelp();
+  if (!S.vol) return;
   const key = e.key.toLowerCase();
   if (key === "m"){ if (!STUDY.active) setMeasure(!S.measure); }
   else if (key === "i") toggleInvert();
@@ -1672,12 +1787,12 @@ function spineStart(){
   }
   spineClear(true);
   SPINE.mode = 1;
-  $("spineBtn").classList.add("active");
+  press($("spineBtn"), true);
   spineHint("SPINE · click the spinal canal at its TOP — sagittal view works best (1/2) · Esc cancels");
 }
 function spineClear(quiet){
   SPINE.mode = 0; SPINE.seeds = []; SPINE.line = null; SPINE.cpr = null;
-  $("spineBtn").classList.remove("active");
+  press($("spineBtn"), false);
   spineHint("");
   if (SPINE.cell){ SPINE.cell.remove(); SPINE.cell = null; }
   if (!quiet && S.vol){ layoutCells(); drawAll(); }
@@ -2028,7 +2143,7 @@ function spineOverlay(k){
    level at a time — the DETECTION is data-driven, the NAMING is
    an anchored guess the user verifies. Not a diagnosis. */
 const DISC_NAMES = ["L5–S1","L4–L5","L3–L4","L2–L3","L1–L2","T12–L1","T11–T12","T10–T11","T9–T10","T8–T9","T7–T8"];
-const LEVEL_COLOR = "#6f9dc9";
+const LEVEL_COLOR = "#f0954e";
 const smooth1D = (A, w) => {
   const n = A.length, O = new Float32Array(n);
   for (let i = 0; i < n; i++){ let s = 0, c = 0; for (let d = -w; d <= w; d++){ const j = i+d; if (j >= 0 && j < n){ s += A[j]; c++; } } O[i] = s/c; }
@@ -2225,7 +2340,7 @@ function updateInfoLive(){
 function toggleInfo(force){
   const p = $("infoPanel");
   p.hidden = force === undefined ? !p.hidden : !force;
-  $("infoBtn").classList.toggle("active", !p.hidden);
+  press($("infoBtn"), !p.hidden);
   if (!p.hidden) renderInfo();
 }
 $("infoBtn").onclick = () => toggleInfo();
@@ -2355,6 +2470,7 @@ function setLayout(mode){
   if (STUDY.active) buildStudyCells(); else layoutCells();
   $("measure").disabled = STUDY.active;
   $("spineBtn").disabled = STUDY.active || !spineAvailable();
+  syncToolTitles();
   if (STUDY.active && SPINE.mode) spineClear(true); // abandon a half-done seed pick; a traced line survives the round trip
   if (STUDY.active) setMeasure(false);
   else if (S.vol){
@@ -2369,6 +2485,7 @@ function setLayout(mode){
   }
 }
 function destroyStudyCells(){
+  studyBuildId++; // invalidate any in-flight async build — it must not re-append cells after this
   document.querySelectorAll("#grid .study-cell").forEach(n => n.remove());
   STUDY.cells = [];
 }
@@ -2423,7 +2540,7 @@ async function buildStudyCells(){
     cell.dataset.aspect = (V.nx*V.sx)/(V.ny*V.sy);
     cell.dataset.nz = V.nz;
     grid.appendChild(cell);
-    const color = PLANE_COLOR[V.labels.XY] || "#5fd7ff";
+    const color = PLANE_COLOR[V.labels.XY] || "#f0954e";
     cell.style.setProperty("--pc", color);
     const tmax = Math.max(...V.sliceTilt), tmin = Math.min(...V.sliceTilt);
     const multi = V.slabSegs.length > 1;
@@ -2501,17 +2618,17 @@ async function buildStudyCells(){
           if (drawn.some(d => Math.abs(d[0]*dx + d[1]*dy) > 0.9995)) continue; // same line already drawn
           drawn.push([dx, dy]);
           ctx.globalAlpha = .6;
-          ctx.strokeStyle = PLANE_COLOR[planeOf(n2)] || "#5fd7ff";
+          ctx.strokeStyle = PLANE_COLOR[planeOf(n2)] || "#f0954e";
           ctx.beginPath(); ctx.moveTo(fi - dx*L, fj - dy*L); ctx.lineTo(fi + dx*L, fj + dy*L); ctx.stroke();
         }
         if (!drawn.length){ // single-orientation study: neutral crosshair for position feedback
           const px = clamp(Math.round(fi), V.nx-1), py = clamp(Math.round(fj), V.ny-1);
-          ctx.globalAlpha = .35; ctx.strokeStyle = "#8a93a0";
+          ctx.globalAlpha = .35; ctx.strokeStyle = "#9a938c";
           ctx.beginPath(); ctx.moveTo(px+.5, 0); ctx.lineTo(px+.5, V.ny); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(0, py+.5); ctx.lineTo(V.nx, py+.5); ctx.stroke();
         }
         if (perp <= V.sz*0.75){ // point lies on (near) this slice
-          ctx.globalAlpha = .95; ctx.fillStyle = "#6f9dc9";
+          ctx.globalAlpha = .95; ctx.fillStyle = "#f0954e";
           ctx.beginPath(); ctx.arc(fi, fj, Math.max(2.5, V.nx/220), 0, 7); ctx.fill();
         }
         ctx.restore();
@@ -2696,11 +2813,54 @@ function autoGrid(cells, asp, W, H, gap){
   return best.rects;
 }
 
+/* Projection-aligned MPR ordering: assign cells to grid slots so crosshair lines
+   CONTINUE across shared edges. Two views SIDE BY SIDE connect when their vertical
+   screen axes are the same patient axis — their shared horizontal line marks the
+   same plane at the same height (true-scale + level-sync keep the heights equal).
+   STACKED views connect when their horizontal screen axes match — the shared
+   vertical line runs straight down. Which pairs align depends on the acquisition
+   (reformats of a coronal stack display "lying down", etc.), so the permutation is
+   scored against the actual grid shape instead of hardcoding plane names.
+   The CPR cell slots after the planes; the 3D view goes last. */
+function mprAssign(cells, rects, gap){
+  const axesOfCell = c => {
+    for (const k of ["XY","XZ","YZ"]) if (views[k].c.parentElement === c)
+      return { h: axisOf(k === "YZ" ? S.colD : S.rowD), v: axisOf(k === "XY" ? S.colD : S.nrm) };
+    return null; // 3D / CPR — no in-plane axes to align
+  };
+  if (!S.rowD) return cells;
+  const planes = cells.filter(c => axesOfCell(c));
+  const rest = cells.filter(c => !axesOfCell(c))
+    .sort((a, b) => (a.classList.contains("cpr") ? 0 : 1) - (b.classList.contains("cpr") ? 0 : 1));
+  if (planes.length < 2) return cells;
+  const near = (x, y) => Math.abs(x - y) <= gap + 1;
+  const score = order => {
+    let sc = 0;
+    for (let i = 0; i < order.length; i++) for (let j = i + 1; j < order.length; j++){
+      const A = axesOfCell(order[i]), B = axesOfCell(order[j]);
+      if (!A || !B) continue;
+      const a = rects[i], b = rects[j];
+      if (near(a.y, b.y) && (near(a.x + a.w + gap, b.x) || near(b.x + b.w + gap, a.x)) && A.v === B.v) sc++;
+      if (near(a.x, b.x) && (near(a.y + a.h + gap, b.y) || near(b.y + b.h + gap, a.y)) && A.h === B.h) sc++;
+    }
+    return sc;
+  };
+  const perms = arr => arr.length <= 1 ? [arr]
+    : arr.flatMap((x, i) => perms(arr.slice(0, i).concat(arr.slice(i + 1))).map(p => [x, ...p]));
+  let best = cells, bestSc = -1;
+  for (const p of perms(planes)){
+    const order = [...p, ...rest];
+    const sc = score(order);
+    if (sc > bestSc){ bestSc = sc; best = order; } // ties: DOM-order permutation wins (deterministic)
+  }
+  return best;
+}
+
 /* One layout path for both modes: an even grid of equal viewports that fills the
    window (auto rows×cols, or a fixed grid the user picked in study mode). */
 function layoutCells(){
   const grid = $("grid");
-  const cells = STUDY.active
+  let cells = STUDY.active
     ? [...grid.querySelectorAll(".study-cell")]
     : [...grid.querySelectorAll(".cell.mpr")];
   if (!cells.length) return;
@@ -2713,6 +2873,7 @@ function layoutCells(){
   const rects = (m && (+m[1])*(+m[2]) >= cells.length)
     ? gridRects(cells.length, W, H, gap, +m[1], +m[2])
     : autoGrid(cells, asp, W, H, gap);
+  if (!STUDY.active) cells = mprAssign(cells, rects, gap);
   cells.forEach((c, i) => {
     c.style.left = rects[i].x+"px"; c.style.top = rects[i].y+"px";
     c.style.width = rects[i].w+"px"; c.style.height = rects[i].h+"px";
@@ -2871,6 +3032,14 @@ function init3D(){
     side: THREE.BackSide, transparent: true
   });
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
+  // Rebase the box from voxel axes to PATIENT axes: world X = patient-left,
+  // Y = superior (head up, always), Z = anterior. The rotation's columns are the
+  // voxel axes (rowD / colD / nrm) expressed in that world basis — without this
+  // the render is oriented by the ACQUISITION (feet-up for coronal/sagittal
+  // stacks, prone-up for axials), which is how the volume rendered upside down.
+  const toW = v => new THREE.Vector3(v[0], v[2], -v[1]); // DICOM LPS → (L, S, A)
+  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(toW(S.rowD), toW(S.colD), toW(S.nrm)));
+  mesh.updateMatrixWorld(true); // applyCam's worldToLocal runs before the first render
   scene.add(mesh);
 
   // Crosshair-synced clip plane: cut away the camera-side half so you look into the volume
@@ -2891,13 +3060,13 @@ function init3D(){
     const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
     const l = new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color, transparent:true, opacity:.8, depthTest:false }));
     l.renderOrder = 1;
-    scene.add(l);
+    mesh.add(l); // child of the box → inherits the voxel→patient rotation
     return l;
   };
   const rects = [ // plane fixing x ↔ YZ view, y ↔ XZ, z ↔ XY
-    mkRect(0, PLANE_COLOR[S.labels.YZ] || "#5fd7ff"),
-    mkRect(1, PLANE_COLOR[S.labels.XZ] || "#5fd7ff"),
-    mkRect(2, PLANE_COLOR[S.labels.XY] || "#5fd7ff")
+    mkRect(0, PLANE_COLOR[S.labels.YZ] || "#f0954e"),
+    mkRect(1, PLANE_COLOR[S.labels.XZ] || "#f0954e"),
+    mkRect(2, PLANE_COLOR[S.labels.XY] || "#f0954e")
   ];
   const syncRects = () => {
     rects[0].position.x = clip.pos.x;
@@ -2908,7 +3077,7 @@ function init3D(){
   syncRects();
   $("slices3d").onclick = () => {
     slicesOn = !slicesOn;
-    $("slices3d").classList.toggle("active", slicesOn);
+    press($("slices3d"), slicesOn);
     syncRects(); render();
   };
   const short = n => ({ AXIAL:"AX", CORONAL:"COR", SAGITTAL:"SAG" })[n] || n;
@@ -2926,8 +3095,8 @@ function init3D(){
     [[1,0,0],"L",1], [[-1,0,0],"R",.5], [[0,1,0],"P",1],
     [[0,-1,0],"A",.5], [[0,0,1],"S",1], [[0,0,-1],"I",.5]
   ]){
-    const v = new THREE.Vector3(v3dot(dir, S.rowD), v3dot(dir, S.colD), v3dot(dir, S.nrm));
-    const col = PLANE_COLOR[planeOf(dir)] || "#5fd7ff";
+    const v = toW(dir); // world IS patient space now — axes map directly
+    const col = PLANE_COLOR[planeOf(dir)] || "#f0954e";
     const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), v.clone().multiplyScalar(.6)]);
     const lm = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: .3 + .5*wgt });
     gscene.add(new THREE.Line(lg, lm));
@@ -2942,8 +3111,14 @@ function init3D(){
     gz.push(lg, lm, gtx, sp.material);
   }
 
-  // Minimal orbit
-  const orbit = { theta: Math.PI/4, phi: Math.PI/2.6, r: 2.4 };
+  // Minimal orbit. Home azimuth follows the L/R display convention so the 3D view
+  // agrees with the 2D coronal: neuro looks from POSTERIOR (patient-left appears on
+  // the viewer's left, and the surgeon's approach for spine work), radiological from
+  // ANTERIOR (patient-left on the viewer's right). Head-up in both.
+  const HOME_PHI = Math.PI/2.6, HOME_R = 2.4;
+  const homeTheta = neuro => neuro ? Math.PI*0.75 : Math.PI*0.25;
+  const orbit = { theta: homeTheta(S.neuro), phi: HOME_PHI, r: HOME_R };
+  const goHome = neuro => { orbit.theta = homeTheta(neuro); orbit.phi = HOME_PHI; orbit.r = HOME_R; render(); };
   const applyCam = () => {
     const { theta, phi, r } = orbit;
     cam.position.set(r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.cos(theta));
@@ -2991,6 +3166,7 @@ function init3D(){
   canvas.addEventListener("pointerup", end3d);
   canvas.addEventListener("pointercancel", end3d);
   canvas.addEventListener("wheel", e => { e.preventDefault(); orbit.r = Math.min(6, Math.max(0.8, orbit.r*(1+Math.sign(e.deltaY)*0.08))); render(); }, { passive:false });
+  canvas.addEventListener("dblclick", () => goHome(S.neuro)); // same reset gesture as the 2D views
   $("mode3d").onchange = e => { mat.uniforms.u_mode.value = +e.target.value; render(); };
   $("clip3d").onchange = e => { clip.axis = +e.target.value; render(); };
   $("density3d").oninput = e => { mat.uniforms.u_density.value = Math.pow(4, e.target.value*2-1); render(); };
@@ -3026,6 +3202,7 @@ function init3D(){
     setWindow(loN, hiN){ mat.uniforms.u_lo.value = loN; mat.uniforms.u_hi.value = hiN; render(); },
     setInvert(inv){ mat.uniforms.u_invert.value = inv ? 1 : 0; render(); },
     setCmap(v){ mat.uniforms.u_cmap.value = v; render(); },
+    setHome(neuro){ goHome(neuro); },
     syncCrosshair(){ setCross(); syncRects(); if (clip.axis >= 0 || slicesOn) render(); },
     dispose(){
       ro.disconnect(); // else every past series' observer keeps resizing/rendering a disposed renderer
@@ -3045,7 +3222,7 @@ function no3D(canvas){
     ctx = canvas.getContext("2d");
   }
   canvas.width = 400; canvas.height = 100;
-  ctx.fillStyle = "#7d8894"; ctx.font = "12px monospace";
+  ctx.fillStyle = "#8f887c"; ctx.font = "12px monospace";
   ctx.fillText("WebGL2 unavailable — 3D view disabled. 2D MPR still works.", 12, 50);
 }
 function sync3DWindow(){
