@@ -68,6 +68,7 @@
   button.active:hover{background-color:rgba(var(--accent-rgb),.24);border-color:var(--cyan)}
   button:disabled{opacity:.4;pointer-events:none}
   #seriesSel{color:var(--green);border-color:#2b4634;max-width:340px;min-width:0}
+  #seriesSel:hover{border-color:#3f6b4d}   /* keep the green identity on hover, just brighter */
   #crossOnly{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);white-space:nowrap;cursor:pointer}
   #crossOnly input{accent-color:var(--cyan);cursor:pointer;margin:0}
   #crossOnly[hidden]{display:none}
@@ -1416,6 +1417,7 @@ function bindPointer(k){
   let wl = null, pan = null;
   const ptrs = new Map();            // active touch/pen/mouse pointers → last client pos
   let pinch = null, multiTouch = false; // two-finger pinch: {d, z, cx, cy}; multiTouch mutes crosshair placement
+  let preTouch = null;                  // crosshair state before the first finger, restored if a pinch begins
   const toVox = e => {
     const r = v.c.getBoundingClientRect();
     let px = Math.min(v.c.width-1, Math.max(0, ((e.clientX-r.left)/r.width*v.c.width)|0));
@@ -1436,9 +1438,15 @@ function bindPointer(k){
   v.c.addEventListener("pointerleave", () => setProbe("—", "—"));
   v.c.addEventListener("pointerdown", e => {
     v.c.setPointerCapture(e.pointerId);
+    if (ptrs.size === 0) preTouch = { ix:S.ix, iy:S.iy, iz:S.iz, P: OB.P ? OB.P.slice() : null };
     ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
     if (ptrs.size === 2){                     // second finger → pinch: cancel any single-touch gesture
       wl = null; pan = null; v.ruler = null; multiTouch = true;
+      if (preTouch){                          // undo the crosshair the first finger placed — this was a pinch
+        if (S.rotK && OB.P && preTouch.P){ OB.P = preTouch.P; obClampP(); obReseat(); obSyncIdx(); }
+        else { S.ix = preTouch.ix; S.iy = preTouch.iy; S.iz = preTouch.iz; }
+        mprBroadcast(k);
+      }
       const [a,b] = [...ptrs.values()];
       pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), z:v.zoom||1, cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
       drawAll(); return;
@@ -2547,12 +2555,14 @@ async function buildStudyCells(){
     }, { passive:false });
     let wl = null, pan = null;
     const ptrs = new Map();
-    let pinch = null, multiTouch = false;
+    let pinch = null, multiTouch = false, preTouch = null; // preTouch: shared crosshair before the first finger
     cv.addEventListener("pointerdown", e => {
       cv.setPointerCapture(e.pointerId);
+      if (ptrs.size === 0) preTouch = STUDY.P ? STUDY.P.slice() : null;
       ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
       if (ptrs.size === 2){                   // second finger → pinch-zoom this compare cell
         wl = null; pan = null; multiTouch = true;
+        STUDY.P = preTouch; broadcastFocus(st); drawStudyAll(); // undo the first finger's crosshair move
         const [a,b] = [...ptrs.values()];
         pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), z:st.zoom||1, cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
         return;
