@@ -1,4 +1,4 @@
-# Meridian
+# meridian
 
 **A local-first DICOM imaging workstation for study review, MPR, 3D, and series management.**
 
