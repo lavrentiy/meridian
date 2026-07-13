@@ -46,6 +46,9 @@ python3 -m http.server 8137 --bind 127.0.0.1
 - **Resizable hanging protocols** — 1×2 through 1×4 and 2×1 through 4×1
   layouts have draggable dividers, so the clinically important plane can take
   more space. Double-click a divider or use **Reset equal** to restore sizing.
+- **Primary acquired-series hanging** — the selected primary series now uses
+  the long edge of the workspace while companion acquisitions remain visible in
+  an aspect-aware strip; choosing a fixed grid keeps the conventional equal-tile view.
 - **Two layouts** — *MPR + 3D* (linked crosshair through one series) and
   *Acquired series* (every series in its native plane, full resolution).
   Cells auto-pack by aspect ratio, or switch to fixed PACS-style grids (1×1–4×4).
@@ -58,6 +61,12 @@ python3 -m http.server 8137 --bind 127.0.0.1
 - **3D volume and density transfer** — MIP, depth-colored MIP, or
   gradient-shaded composite with HU-aware soft-tissue, bone, and lung isolation,
   a manual density band, four color gradients, slice outlines, and clipping.
+- **Cine and quantitative review** — loop the hovered acquired stack or MPR
+  plane at 6–24 fps, and draw a slice-attached elliptical ROI for physical area,
+  mean, and standard deviation. ROI results always come from source voxels, not
+  rendered display pixels.
+- **Windowing with context** — every DICOM VOI LUT window is exposed by name;
+  CT also adds Brain, Stroke, Subdural, Abdomen, Lung, and Bone presets.
 - **Tools** — window/level (drag or presets), mm distance measure, probe
   readout, Gray / Inferno / Viridis / Turbo mapping, invert, L/R mirror, PNG snapshot.
 - **Fast navigation** — `Ctrl/⌘ K` opens a command palette, `Alt+1–3` switches
@@ -81,6 +90,8 @@ python3 -m http.server 8137 --bind 127.0.0.1
 | Window / level | shift-drag on any slice, or header presets |
 | Probe | hover any slice — voxel position and value in the status bar |
 | Measure distance (mm) | `M`, then drag; double-click a view to clear |
+| Quantitative elliptical ROI | `R`, then drag; area, mean, and SD stay on its source slice |
+| Cine playback | `Space` loops the hovered stack; set 6–24 fps in Display settings |
 | Invert · Colormap · Mirror | `I` / header selectors / per-view ⇋ |
 | Snapshot | save all four views as PNG |
 | 3D | drag to rotate, wheel to zoom; buttons for render mode, slice outlines, clip |
