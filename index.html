@@ -3356,19 +3356,21 @@ async function buildStudyCells(){
   status(hidden ? `${hidden} non-cross-sectional series hidden — uncheck “Cross-sectional only” to show` : "");
 }
 
-/* Even grid of equal viewports (PACS hanging-protocol style): the window is
-   split into equal rows×cols slots and every CELL fills its whole slot, so the
-   grid tiles edge-to-edge with no wasted outer gutters. The image inside each
+/* PACS hanging-protocol grid: the window is split into rows×cols slots and every
+   CELL fills its whole slot. Auto layouts can stretch an incomplete final row,
+   so the grid tiles edge-to-edge with no wasted outer gutters. The image inside each
    cell is letterboxed to its own aspect ratio by CSS (canvas max-width/height +
    the cell's flex centering) — the black bars live inside the aligned viewport,
    not between floating tiles. */
-function gridRects(n, W, H, gap, rows, cols){
+function gridRects(n, W, H, gap, rows, cols, stretchTail = false){
   rows = Math.max(rows, Math.ceil(n/cols)); // never hide a cell if the pick is too small
   const slotW = (W - gap*(cols-1))/cols, slotH = (H - gap*(rows-1))/rows;
   const rects = [];
   for (let i = 0; i < n; i++){
     const row = (i/cols)|0, col = i%cols;
-    rects[i] = { x: col*(slotW+gap), y: row*(slotH+gap), w: slotW, h: slotH };
+    const left = n-row*cols, rowCols = stretchTail ? Math.min(cols,left) : cols;
+    const rowSlotW = stretchTail ? (W-gap*(rowCols-1))/rowCols : slotW;
+    rects[i] = { x: col*(rowSlotW+gap), y: row*(slotH+gap), w: rowSlotW, h: slotH };
   }
   return rects;
 }
@@ -3463,15 +3465,16 @@ function gridFill(asp, rects){
   }, 0);
 }
 
-/* Auto grid: pick the rows×cols split whose equal slots best fit the images
+/* Auto grid: pick the rows×cols split whose slots best fit the images
    (most covered area, least letterboxing). Square-ish views in a square-ish
-   window land on the conventional 2×2 quad; wide thin reformats stack instead.
-   No view is singled out — every viewport is the same size. */
+   window land on the conventional 2×2 quad; wide thin reformats stack instead. */
 function autoGrid(cells, asp, W, H, gap){
   const n = cells.length;
   let best = null;
   for (let cols = 1; cols <= n; cols++){
-    const rects = gridRects(n, W, H, gap, Math.ceil(n/cols), cols);
+    // An incomplete final row shares all of its width instead of reserving
+    // invisible empty slots (for example, the third tile in a 2×2 choice).
+    const rects = gridRects(n, W, H, gap, Math.ceil(n/cols), cols, true);
     const fill = gridFill(asp, rects);
     if (!best || fill > best.fill) best = { fill, rects };
   }
@@ -3537,8 +3540,8 @@ function mprAssign(cells, rects, gap){
   return best;
 }
 
-/* One layout path for both modes: an even grid of equal viewports that fills the
-   window (auto rows×cols, or a fixed grid the user picked in study mode). */
+/* One layout path for both modes: a packed grid that fills the window (auto
+   rows×cols, or a fixed grid the user picked in study mode). */
 function layoutCells(){
   const grid = $("grid");
   grid.querySelectorAll(".split-handle").forEach(h => h.remove());
