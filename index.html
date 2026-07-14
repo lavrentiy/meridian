@@ -157,9 +157,11 @@
   .sep{width:1px;height:16px;background:var(--line);flex:none}
 
   /* ── vertical tool rail: toggles + one-shot tools as icon buttons ── */
-  #rail{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;
-    background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
-  #rail::-webkit-scrollbar{width:3px}#rail::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
+  #rail{display:flex;flex-direction:column;align-items:center;background:var(--panel);border-right:1px solid var(--line);overflow:hidden}
+  #rail .rail-main,#rail .rail-foot{width:100%;display:flex;flex-direction:column;align-items:center;gap:3px}
+  #rail .rail-main{min-height:0;flex:1;overflow-y:auto;padding:6px 0;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+  #rail .rail-main::-webkit-scrollbar{width:3px}#rail .rail-main::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
+  #rail .rail-foot{flex:none;padding:5px 0 6px;border-top:1px solid var(--line)}
   #rail button{width:44px;height:44px;min-height:44px;padding:0;display:flex;align-items:center;justify-content:center;
     color:var(--dim);font:600 12px/1 var(--mono);letter-spacing:.01em;background:transparent;border-color:transparent;border-radius:6px;flex:none}
   #rail button:hover{color:var(--text);background:var(--panel-2);border-color:var(--line)}
@@ -167,7 +169,6 @@
   #rail button.active:hover{background:rgba(var(--accent-rgb),.2);border-color:rgba(var(--accent-rgb),.34)}
   #rail svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:block}
   #rail .rsep{width:28px;height:1px;background:var(--line-2);margin:5px 0;flex:none}
-  #rail .rspace{flex:1}
 
   /* ── settings popover (anchored to the rail foot) ── */
   #settingsPop{position:fixed;left:108px;bottom:38px;z-index:8;min-width:210px;
@@ -218,6 +219,7 @@
   .cell.mpr .rot svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .cell.mpr:hover .rot,.cell.mpr .rot:focus-visible{opacity:.9}
   .cell.mpr .rot:hover{opacity:1;color:var(--accent);border-color:var(--accent);background:rgba(12,18,22,.96)}
+  .touch-label{display:none}
   .cell.mpr.rolled .rot{opacity:1;color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),.16)}
   .cell.mpr.rolled{box-shadow:inset 0 0 0 1px var(--accent)}
   button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -256,12 +258,12 @@
   .cell.sm .om,.cell.sm .info{display:none}
   .cell.sm .tag{font-size:10px;gap:5px;padding:2px 7px 2px 5px;max-width:100%}
   .study-cell.sm .tag{max-width:calc(100% - 88px)}
+  .study-cell.xs .tag{max-width:calc(100% - 48px)}
   /* keep the primary-view control always visible — it is the only way to
      make a small tile the large view, so it must never be hover-gated away */
   @media(hover:hover){
-    .cell.sm button.mirror,.cell.sm .tools3d{display:none}
+    .cell.sm button.mirror{display:none}
     .cell.sm:hover button.mirror{display:flex}
-    .cell.sm:hover .tools3d{display:flex}
     .cell.xs .tabs,.cell.xs .slice-slider{display:none}
     .cell.xs:hover .tabs{display:flex}
     .cell.xs:hover .slice-slider{display:block}
@@ -310,9 +312,20 @@
     display:flex;align-items:center;justify-content:center;color:var(--dim);background:rgba(12,18,22,.86);border-color:rgba(113,129,140,.55);border-radius:6px}
   button.mirror{right:8px}
   button.pin{right:44px}
+  .study-cell.xs button.pin{right:8px}
+  .study-cell.xs button.mirror{top:42px;right:8px}
   button.mirror svg,button.pin svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   button.mirror:hover,button.pin:hover{color:var(--text);background:rgba(12,18,22,.98)}
   button.pin.active{background:rgba(var(--accent-rgb),.16);border-color:var(--accent);color:var(--accent)}
+  @media(pointer:coarse){
+    .touch-label{display:inline;font:600 9px/1 var(--ui);letter-spacing:.01em}
+    .cell.mpr .rot{width:58px;gap:4px;opacity:.9}
+    .cell.mpr:has(> .rot) .tag{max-width:calc(100% - 68px)}
+    button.mirror,button.pin{width:58px;gap:4px}
+    .study-cell button.pin{top:6px;right:8px}
+    .study-cell button.mirror{top:42px;right:8px}
+    .study-cell .tag,.study-cell.sm .tag,.study-cell.xs .tag{max-width:calc(100% - 68px)}
+  }
   /* the primary / hero view — brighter plane-colored frame (both layouts) */
   .cell.primary{border-color:var(--pc,var(--accent))!important;box-shadow:inset 0 0 0 1px var(--pc,var(--accent)),0 0 12px -6px var(--pc,var(--accent))}
   .cell.primary .tag{background:rgba(0,0,0,.72)}
@@ -320,12 +333,21 @@
   .cell.cine-target{border-color:var(--orange)!important;box-shadow:inset 0 0 0 1px var(--orange),0 0 16px -6px var(--orange)}
 
   #v3d{display:block;width:100%;height:100%}
+  #tools3dToggle{display:none;position:absolute;top:6px;right:8px;z-index:4;min-height:32px;height:32px;padding:0 9px;align-items:center;gap:6px;
+    color:var(--text);background:rgba(12,18,22,.9);border-color:var(--line-2);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  #tools3dToggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
   .tools3d{position:absolute;top:5px;right:6px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;
     background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;z-index:3}
+  .cell.tools-compact > .tag{max-width:calc(100% - 126px)}
+  .cell.tools-compact #tools3dToggle{display:flex}
+  .cell.tools-compact .tools3d{display:none;top:44px;max-width:calc(100% - 12px);background:rgba(12,18,22,.96);border:1px solid var(--line-2);box-shadow:0 8px 24px rgba(0,0,0,.55)}
+  .cell.tools-compact.tools-open .tools3d{display:flex}
   .tools3d input[type=range]{width:72px;accent-color:var(--magenta)}
   #tfPanel{position:absolute;top:48px;right:7px;z-index:5;width:250px;padding:11px 12px;background:rgba(20,18,16,.96);border:1px solid var(--line-2);border-radius:7px;box-shadow:0 10px 32px rgba(0,0,0,.55)}
+  .cell.tools-compact #tfPanel{top:128px}
   #tfPanel label{display:grid;grid-template-columns:45px 1fr 66px;align-items:center;gap:8px;font:9px var(--mono);color:var(--dim);margin:5px 0}
   #tfPanel input{width:100%;accent-color:var(--magenta)}#tfPanel output{text-align:right;color:var(--text)}
+  @media(max-width:820px){.cell.tools-compact #tfPanel{position:fixed;top:auto;right:10px;bottom:96px;width:calc(100vw - 68px)}}
 
   /* ── info panel ── */
   #infoPanel{position:fixed;top:54px;right:6px;bottom:34px;width:330px;overflow-y:auto;z-index:6;
@@ -401,6 +423,7 @@
 
   <!-- vertical tool rail: display toggles above, one-shot tools below, settings + help at the foot -->
   <nav id="rail" aria-label="Tools" hidden>
+   <div class="rail-main">
     <button id="invert" aria-label="Invert grayscale" aria-pressed="false" title="Invert grayscale (I)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" stroke="none"/></svg></button>
     <button id="scaleBtn" aria-label="Match physical scale" aria-pressed="false" title="Show every view at the same physical scale (mm) so anatomy is comparable across cells — off = each view fills its own cell">1:1</button>
@@ -412,6 +435,8 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 10.6 10.6 2.2l3.2 3.2-8.4 8.4z"/><path d="m5 8 1.4 1.4"/><path d="m7.4 5.6 1.4 1.4"/><path d="m9.8 3.2 1.4 1.4"/></svg></button>
     <button id="roiBtn" aria-label="Draw elliptical ROI" aria-pressed="false" title="Draw an elliptical ROI with area, mean, and standard deviation (R)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="8" rx="5.6" ry="4.2"/><path d="M8 2.2v1.6M8 12.2v1.6M1.8 8h1.6M12.6 8h1.6"/></svg></button>
+    <button id="clearAnnotations" aria-label="Clear saved annotations" title="Clear saved measurements and ROIs for this series">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 4.5h9.6M6.2 2.5h3.6M5 4.5l.7 9h4.6l.7-9M6.8 7v4M9.2 7v4"/></svg></button>
     <button id="cineBtn" aria-label="Play cine loop" aria-pressed="false" title="Play the hovered stack as a cine loop (Space)">
       <svg class="play" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 7 5-7 5z"/></svg></button>
     <button id="spineBtn" aria-label="Trace spinal canal" aria-pressed="false" title="Trace the spinal canal: click it at the top, then at the bottom (sagittal T2 works best) — builds a straightened-spine CPR view. Click again to clear.">
@@ -420,12 +445,14 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 5.4h2.7l1.4-1.9h4.2l1.4 1.9h2.7v7.5H1.8z"/><circle cx="8" cy="8.9" r="2.3"/></svg></button>
     <button id="infoBtn" aria-label="Study and slicing information" aria-pressed="false" title="Patient, study, series & slicing details">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r=".8" fill="currentColor" stroke="none"/></svg></button>
-    <span class="rspace"></span>
+   </div>
+   <div class="rail-foot">
     <button id="focusBtn" aria-label="Distraction-free viewer" aria-pressed="false" title="Distraction-free viewer (F)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
     <button id="settingsBtn" aria-label="Display settings" aria-pressed="false" title="Display settings — colormap, tile grid, series filter">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12"/><circle cx="10.5" cy="4.5" r="1.7" fill="var(--panel)"/><circle cx="5" cy="8" r="1.7" fill="var(--panel)"/><circle cx="11.5" cy="11.5" r="1.7" fill="var(--panel)"/></svg></button>
     <button id="helpBtn" aria-label="Keyboard and pointer help" title="Mouse, touch & keyboard reference (?)">?</button>
+   </div>
   </nav>
 
   <div id="grid" hidden>
@@ -436,19 +463,20 @@
     </div>
     <div id="spineHint" hidden></div>
     <div class="cell mpr"><canvas class="slice" id="cXY"></canvas><div class="tag" id="tXY"></div><div class="info" id="iXY"></div>
-      <button class="rot" data-k="XY" aria-label="Tilt axial slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg></button>
+      <button class="rot" data-k="XY" aria-label="Tilt axial slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg><span class="touch-label">Tilt</span></button>
       <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
       <input type="range" class="slice-slider v" id="sXY" min="0" value="0" step="1" aria-label="Slice XY"></div>
     <div class="cell mpr"><canvas class="slice" id="cXZ"></canvas><div class="tag" id="tXZ"></div><div class="info" id="iXZ"></div>
-      <button class="rot" data-k="XZ" aria-label="Tilt coronal slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg></button>
+      <button class="rot" data-k="XZ" aria-label="Tilt coronal slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg><span class="touch-label">Tilt</span></button>
       <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
       <input type="range" class="slice-slider v" id="sXZ" min="0" value="0" step="1" aria-label="Slice XZ"></div>
     <div class="cell mpr"><canvas class="slice" id="cYZ"></canvas><div class="tag" id="tYZ"></div><div class="info" id="iYZ"></div>
-      <button class="rot" data-k="YZ" aria-label="Tilt sagittal slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg></button>
+      <button class="rot" data-k="YZ" aria-label="Tilt sagittal slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg><span class="touch-label">Tilt</span></button>
       <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
       <input type="range" class="slice-slider v" id="sYZ" min="0" value="0" step="1" aria-label="Slice YZ"></div>
     <div class="cell mpr"><canvas id="v3d"></canvas><div class="tag"><span class="lbl">3D VOLUME</span><em class="syn">RENDERED</em></div>
-      <div class="tools3d">
+      <button id="tools3dToggle" aria-controls="tools3dControls" aria-expanded="false" title="Open 3D controls"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5h12M3 9h12M3 13h12"/><circle cx="11.5" cy="5" r="1.5" fill="var(--panel)"/><circle cx="6.5" cy="9" r="1.5" fill="var(--panel)"/><circle cx="12.5" cy="13" r="1.5" fill="var(--panel)"/></svg><span>3D controls</span></button>
+      <div class="tools3d" id="tools3dControls" role="group" aria-label="3D rendering controls">
         <select id="mode3d" title="Render mode">
           <option value="0">MIP</option>
           <option value="2" selected>Depth MIP</option>
@@ -660,6 +688,83 @@ const S = {
   storedWindows:[]
 };
 
+/* Annotations deliberately live only in this browser's IndexedDB. Records contain
+   geometry-relative coordinates and DICOM UIDs, never pixels or patient metadata. */
+const ANNOTATIONS = { db:null, key:"", writeTimer:0 };
+function annotationKey(entry = S.seriesList[S.curIdx]){
+  const d = entry?.slices?.[0]?.ds;
+  const study = d?.string("x0020000d") || "study-unknown";
+  const series = d?.string("x0020000e") || "series-unknown";
+  return `${study}/${series}`;
+}
+function openAnnotationDB(){
+  if (ANNOTATIONS.db) return Promise.resolve(ANNOTATIONS.db);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("meridian-annotations", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("series", { keyPath:"key" });
+    req.onsuccess = () => { ANNOTATIONS.db = req.result; resolve(req.result); };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function annotationRecord(key){
+  const db = await openAnnotationDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("series", "readonly").objectStore("series").get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+function annotationSnapshot(){
+  const out = {};
+  for (const k of MPR_PLANES){
+    const v = views[k];
+    if (v.ruler) out[k] = { ...(out[k] || {}), ruler:{...v.ruler} };
+    if (v.roi) out[k] = { ...(out[k] || {}), roi:{...v.roi} };
+  }
+  return out;
+}
+function syncAnnotationButton(){
+  const has = Object.values(annotationSnapshot()).some(a => a.ruler || a.roi);
+  $("clearAnnotations").disabled = !S.vol || !has;
+}
+async function writeAnnotations(key = ANNOTATIONS.key, annotations = annotationSnapshot()){
+  if (!key) return;
+  try {
+    const db = await openAnnotationDB();
+    const store = db.transaction("series", "readwrite").objectStore("series");
+    if (Object.keys(annotations).length) store.put({ key, version:1, savedAt:Date.now(), annotations });
+    else store.delete(key);
+  } catch (err) { console.warn("Could not save annotations", err); }
+}
+function persistAnnotations(){
+  clearTimeout(ANNOTATIONS.writeTimer);
+  const key = ANNOTATIONS.key, annotations = annotationSnapshot();
+  ANNOTATIONS.writeTimer = setTimeout(() => { writeAnnotations(key, annotations); }, 120);
+  syncAnnotationButton();
+}
+function validAnnotation(a){
+  return a && [a.x0,a.y0,a.x1,a.y1].every(Number.isFinite);
+}
+async function restoreAnnotations(entry){
+  ANNOTATIONS.key = annotationKey(entry);
+  for (const k of MPR_PLANES){ views[k].ruler = null; views[k].roi = null; }
+  try {
+    const record = await annotationRecord(ANNOTATIONS.key);
+    for (const k of MPR_PLANES){
+      const saved = record?.annotations?.[k];
+      if (validAnnotation(saved?.ruler)) views[k].ruler = {...saved.ruler};
+      if (validAnnotation(saved?.roi) && Number.isFinite(saved.roi.at)) views[k].roi = {...saved.roi};
+    }
+    if (record) status("Restored saved annotations for this series.");
+  } catch (err) { console.warn("Could not restore annotations", err); }
+  syncAnnotationButton();
+}
+async function clearAnnotations(){
+  for (const k of MPR_PLANES){ views[k].ruler = null; views[k].roi = null; }
+  await writeAnnotations();
+  syncAnnotationButton(); drawAll();
+}
+
 const $ = id => document.getElementById(id);
 const status = m => { $("status").textContent = m || ""; };
 /* toggle-button state: visual .active + aria-pressed always move together */
@@ -754,6 +859,7 @@ function syncAvailability(){
     $(id).disabled = !has;
   $("measure").disabled = !has || STUDY.active;
   $("roiBtn").disabled = !has || STUDY.active || !!S.volC;
+  syncAnnotationButton();
   $("spineBtn").disabled = !has || STUDY.active || !spineAvailable();
   syncToolTitles();
 }
@@ -855,6 +961,7 @@ addEventListener("hashchange", () => navigate(location.hash.slice(1) || "home", 
 addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); return $("commandOverlay").hidden ? openCommands() : closeCommands(); }
   if (e.key === "Escape" && !$("commandOverlay").hidden){ e.preventDefault(); return closeCommands(); }
+  if (e.key === "Escape" && $("v3d").parentElement.classList.contains("tools-open")){ e.preventDefault(); set3DToolsOpen(false); return $("tools3dToggle").focus(); }
   if (e.altKey && /^[1-3]$/.test(e.key)) { e.preventDefault(); navigate(["home","viewer","series"][+e.key-1]); }
   if (APP.page === "viewer" && S.vol && e.key.toLowerCase() === "f" && !["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)){ e.preventDefault(); toggleFocus(); }
 });
@@ -1133,16 +1240,17 @@ async function loadSeries(idx){
     if (!SUPPORTED_TS.has(entry.ts))
       throw new Error(`${entry.tag} uses transfer syntax ${TS_NAME[entry.ts] || entry.ts}, which is not supported.\nSupported: uncompressed, RLE, JPEG Lossless, JPEG-LS, JPEG 2000, 8-bit JPEG baseline.`);
     await buildVolume(entry.slices.slice(), entry.ts);
-    for (const k in views){ views[k].ruler = null; views[k].roi = null; }
     press($("invert"), S.invert);
     initViews();
+    await restoreAnnotations(entry);
+    drawAll();
     if (S.volC && S.roi) setROI(false);
     S.curIdx = idx;
     $("drop").classList.add("hide");
     $("wl").classList.add("show");
     if (STUDY.active){ destroyStudyCells(); buildStudyCells(); }
     if (!$("infoPanel").hidden) renderInfo();
-    status("");
+    if (!Object.values(annotationSnapshot()).some(a => a.ruler || a.roi)) status("");
     // Honor the chosen layout on the first study loaded (default: Acquired series)
     if (!S.layoutInit){ S.layoutInit = true; const m = $("layoutSel").value; if (m !== "mpr") setLayout(m); }
     renderHome(); renderSeriesWorkspace();
@@ -1533,6 +1641,7 @@ function bindRotate(k){
     if (S.nz < 2) return;                       // no through-dimension to tilt into
     e.preventDefault(); e.stopPropagation();
     for (const kk in views) views[kk].roi = null; // an ROI belongs to the plane basis on which it was drawn
+    persistAnnotations();
     h.setPointerCapture(e.pointerId); h.style.cursor = "grabbing";
     if (!S.rotK || !OB.P){ S.rotK = k; S.rotAng = 0; obInit(); }
     else if (S.rotK !== k){ S.rotK = k; S.rotAng = 0; obSeat(); } // one active axis at a time
@@ -2151,10 +2260,11 @@ function bindPointer(k){
     if (ptrs.size < 2) pinch = null;          // dropped below two fingers → leave pinch
     if (ptrs.size === 0) multiTouch = false;  // ...but don't re-place crosshair until all lifted
     wl = null; pan = null;
+    if (ptrs.size === 0) persistAnnotations();
   };
   v.c.addEventListener("pointerup", endPtr);
   v.c.addEventListener("pointercancel", endPtr);
-  v.c.addEventListener("dblclick", () => { vpReset(v.c, v); mprSyncZoom(1, k); v.ruler = null; v.roi = null; drawAll(); });
+  v.c.addEventListener("dblclick", () => { vpReset(v.c, v); mprSyncZoom(1, k); v.ruler = null; v.roi = null; persistAnnotations(); drawAll(); });
   const wst = {};
   v.c.addEventListener("wheel", e => {
     e.preventDefault();
@@ -2172,14 +2282,12 @@ function setMeasure(on){
   if (on && S.roi) setROI(false);
   S.measure = on;
   press($("measure"), on);
-  if (!on){ for (const k in views) views[k].ruler = null; drawAll(); }
 }
 function setROI(on){
   if (on && (STUDY.active || S.volC)) return;
   if (on && S.measure) setMeasure(false);
   S.roi = on;
   press($("roiBtn"), on);
-  if (!on){ for (const k in views) views[k].roi = null; drawAll(); }
 }
 /* disabled tools keep a tooltip that says WHY (disabled buttons still show title) */
 const TITLE_MEASURE = $("measure").title, TITLE_ROI = $("roiBtn").title, TITLE_SPINE = $("spineBtn").title;
@@ -2194,6 +2302,7 @@ function syncToolTitles(){
 }
 $("measure").onclick = () => setMeasure(!S.measure);
 $("roiBtn").onclick = () => setROI(!S.roi);
+$("clearAnnotations").onclick = clearAnnotations;
 
 function toggleInvert(){
   S.invert = !S.invert;
@@ -3164,8 +3273,8 @@ async function buildStudyCells(){
       <div class="tag">${tiltChip(tmax)}<span class="lbl">${label}</span>${angBadge}<em class="raw">ACQUIRED</em></div>
       ${variants.length > 1 ? `<div class="tabs">${variants.map((it,i) =>
         `<button data-i="${i}"${i ? "" : ' class="active"'} aria-pressed="${String(!i)}" title="${it.entry.tag} · ${esc(it.entry.desc)}">${tabLabel(it,i)}</button>`).join("")}</div>` : ""}
-      <button class="pin" aria-label="Make this the primary view" aria-pressed="false" title="Make this the primary view — max height"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M8 5h7v7M15 5 8 12"/></svg></button>
-      <button class="mirror" aria-label="Mirror left to right" aria-pressed="false" title="Mirror left–right (display only)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M8 7l-3 3 3 3M12 7l3 3-3 3"/></svg></button>
+      <button class="pin" aria-label="Make this the primary view" aria-pressed="false" title="Make this the primary view — max height"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M8 5h7v7M15 5 8 12"/></svg><span class="touch-label">Main</span></button>
+      <button class="mirror" aria-label="Mirror left to right" aria-pressed="false" title="Mirror left–right (display only)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M8 7l-3 3 3 3M12 7l3 3-3 3"/></svg><span class="touch-label">Flip</span></button>
       <div class="info"></div>
       <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
       <input type="range" min="0" max="${V.nz-1}" step="1" value="${st.iz}" aria-label="Slice">`;
@@ -3592,7 +3701,9 @@ function layoutCells(){
     // size tiers — small tiles shed overlay chrome (see .cell.sm/.xs CSS)
     c.classList.toggle("sm", rects[i].w < 240 || rects[i].h < 190);
     c.classList.toggle("xs", rects[i].w < 150 || rects[i].h < 120);
+    c.classList.toggle("tools-compact", !!c.querySelector(".tools3d") && (rects[i].w < 620 || rects[i].h < 260));
   });
+  sync3DToolDisclosure();
   if (line && cells.length > 1) installSplitHandles(rects,horizontal);
   else if (hero) installHeroHandle(rects);
   applyScale();
@@ -3628,6 +3739,25 @@ addEventListener("resize", () => layoutCells()); // fallback for embedded/emulat
    3D — WebGL2 raycast (MIP / composite) via three.js
    ============================================================ */
 let R3 = null;
+function sync3DToolDisclosure(){
+  const cell = $("v3d").parentElement, compact = cell.classList.contains("tools-compact");
+  if (!compact) cell.classList.remove("tools-open");
+  const open = compact && cell.classList.contains("tools-open");
+  $("tools3dToggle").setAttribute("aria-expanded", String(open));
+  $("tools3dToggle").title = open ? "Close 3D controls" : "Open 3D controls";
+  if (compact && !open) $("tfPanel").hidden = true;
+  else if ($("tf3d").value === "custom") $("tfPanel").hidden = false;
+}
+function set3DToolsOpen(on){
+  const cell = $("v3d").parentElement;
+  cell.classList.toggle("tools-open", !!on && cell.classList.contains("tools-compact"));
+  sync3DToolDisclosure();
+}
+$("tools3dToggle").onclick = () => set3DToolsOpen(!$("v3d").parentElement.classList.contains("tools-open"));
+addEventListener("pointerdown", e => {
+  const cell = $("v3d").parentElement;
+  if (cell.classList.contains("tools-open") && !e.target.closest?.("#tools3dToggle,#tools3dControls,#tfPanel")) set3DToolsOpen(false);
+});
 const isCTVolume = () => S.seriesList[S.curIdx]?.modality === "CT";
 function normDensity(value){
   const a=S.minV*S.slope+S.intercept, b=S.maxV*S.slope+S.intercept;
@@ -3651,7 +3781,8 @@ function applyTransfer(name=$("tf3d").value){
   if (hi < lo+.01){ hi=Math.min(1,lo+.01); lo=Math.max(0,hi-.01); }
   $("tfLow").value=lo; $("tfHigh").value=hi;
   $("tfLowVal").textContent=densityLabel(lo); $("tfHighVal").textContent=densityLabel(hi);
-  $("tfPanel").hidden = name !== "custom";
+  const cell = $("v3d").parentElement;
+  $("tfPanel").hidden = name !== "custom" || (cell.classList.contains("tools-compact") && !cell.classList.contains("tools-open"));
   if (R3) R3.setTransfer(lo,hi);
   return [lo,hi];
 }

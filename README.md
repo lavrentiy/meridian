@@ -64,7 +64,9 @@ python3 -m http.server 8137 --bind 127.0.0.1
 - **Cine and quantitative review** — loop the hovered acquired stack or MPR
   plane at 6–24 fps, and draw a slice-attached elliptical ROI for physical area,
   mean, and standard deviation. ROI results always come from source voxels, not
-  rendered display pixels.
+  rendered display pixels. Measurements and ROIs are saved locally in the
+  browser per DICOM study and series, then restored when the same series is
+  opened again.
 - **Windowing with context** — every DICOM VOI LUT window is exposed by name;
   CT also adds Brain, Stroke, Subdural, Abdomen, Lung, and Bone presets.
 - **Tools** — window/level (drag or presets), mm distance measure, probe
@@ -91,6 +93,7 @@ python3 -m http.server 8137 --bind 127.0.0.1
 | Probe | hover any slice — voxel position and value in the status bar |
 | Measure distance (mm) | `M`, then drag; double-click a view to clear |
 | Quantitative elliptical ROI | `R`, then drag; area, mean, and SD stay on its source slice |
+| Clear saved annotations | trash button; removes this series’ saved rulers and ROIs |
 | Cine playback | `Space` loops the hovered stack; set 6–24 fps in Display settings |
 | Invert · Colormap · Mirror | `I` / header selectors / per-view ⇋ |
 | Snapshot | save all four views as PNG |
