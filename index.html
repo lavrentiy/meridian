@@ -111,8 +111,16 @@
   .split-handle:hover::after,.split-handle.dragging::after{background:var(--accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.5)}
 
   /* ── command palette: keyboard-first navigation and viewer actions ── */
-  #commandOverlay{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-start;justify-content:center;padding-top:min(16vh,140px);background:rgba(0,0,0,.6);backdrop-filter:blur(3px)}
-  #commandPanel{width:min(560px,calc(100% - 28px));overflow:hidden;background:#15120f;border:1px solid var(--line-2);border-radius:12px;box-shadow:0 24px 80px rgba(0,0,0,.7)}
+  #commandOverlay{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-start;justify-content:center;padding-top:min(16vh,140px);
+    background:rgba(0,0,0,.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    opacity:0;pointer-events:none;visibility:hidden;transition:opacity 0.2s ease, visibility 0.2s}
+  #commandOverlay.show{opacity:1;pointer-events:auto;visibility:visible}
+  #commandPanel{width:min(560px,calc(100% - 28px));overflow:hidden;
+    background:rgba(21,26,32,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid rgba(64,81,93,0.6);border-radius:12px;
+    box-shadow:0 24px 80px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,0.06);
+    transform:translateY(-20px);transition:transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)}
+  #commandOverlay.show #commandPanel{transform:translateY(0)}
   #commandSearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--text);padding:17px 18px;font:14px var(--ui);outline:0}
   #commandSearch::placeholder{color:var(--faint)}
   #commandList{padding:6px;max-height:350px;overflow-y:auto}
@@ -163,8 +171,10 @@
   #rail .rail-main::-webkit-scrollbar{width:3px}#rail .rail-main::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
   #rail .rail-foot{flex:none;padding:5px 0 6px;border-top:1px solid var(--line)}
   #rail button{width:44px;height:44px;min-height:44px;padding:0;display:flex;align-items:center;justify-content:center;
-    color:var(--dim);font:600 12px/1 var(--mono);letter-spacing:.01em;background:transparent;border-color:transparent;border-radius:6px;flex:none}
+    color:var(--dim);font:600 12px/1 var(--mono);letter-spacing:.01em;background:transparent;border-color:transparent;border-radius:6px;flex:none;
+    transition:background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease, transform 0.1s ease}
   #rail button:hover{color:var(--text);background:var(--panel-2);border-color:var(--line)}
+  #rail button:active{transform:scale(0.92)}
   #rail button.active{color:var(--accent);background:rgba(var(--accent-rgb),.12);border-color:transparent;box-shadow:inset 3px 0 var(--accent)}
   #rail button.active:hover{background:rgba(var(--accent-rgb),.2);border-color:rgba(var(--accent-rgb),.34)}
   #rail svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:block}
@@ -172,21 +182,29 @@
 
   /* ── settings popover (anchored to the rail foot) ── */
   #settingsPop{position:fixed;left:108px;bottom:38px;z-index:8;min-width:210px;
-    background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;
-    display:flex;flex-direction:column;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.55)}
-  #settingsPop[hidden]{display:none}
+    background:rgba(18,26,32,0.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(64,81,93,0.6);border-radius:8px;padding:12px;
+    display:flex;flex-direction:column;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.55);
+    transform:translateY(10px);opacity:0;pointer-events:none;visibility:hidden;
+    transition:transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s linear, visibility 0.2s}
+  #settingsPop.show{transform:translateY(0);opacity:1;pointer-events:auto;visibility:visible}
   #settingsPop .set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
     font-size:11px;color:var(--dim);white-space:nowrap}
   #settingsPop .set-row:has(> [hidden]){display:none}
   #settingsPop select{min-width:110px}
 
   /* ── keyboard / mouse reference overlay ── */
-  #helpOverlay{position:fixed;inset:0;z-index:11;background:rgba(0,0,0,.55);
-    display:flex;align-items:center;justify-content:center}
-  #helpOverlay[hidden]{display:none}
-  #helpOverlay .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:8px;
-    padding:18px 22px;max-width:640px;max-height:80vh;overflow-y:auto;
-    display:grid;grid-template-columns:1fr 1fr;gap:4px 28px}
+  #helpOverlay{position:fixed;inset:0;z-index:11;background:rgba(0,0,0,.62);
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;visibility:hidden;transition:opacity 0.25s ease, visibility 0.25s}
+  #helpOverlay.show{opacity:1;pointer-events:auto;visibility:visible}
+  #helpOverlay .panel{background:rgba(18,26,32,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid rgba(64,81,93,0.6);border-radius:12px;
+    padding:20px 24px;max-width:640px;max-height:80vh;overflow-y:auto;
+    display:grid;grid-template-columns:1fr 1fr;gap:4px 28px;
+    box-shadow:0 24px 64px rgba(0,0,0,.65);
+    transform:scale(0.94);transition:transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)}
   #helpOverlay h3{grid-column:1/-1;color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.08em;
     text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:3px;margin:10px 0 4px}
   #helpOverlay h3:first-child{margin-top:0}
@@ -196,7 +214,8 @@
 
   button,select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:4px;
     min-height:32px;padding:6px 11px;font-size:12px;font-weight:600;letter-spacing:0;cursor:pointer;font-family:var(--ui);
-    transition:background-color .1s ease,border-color .1s ease}
+    transition:background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease, transform 0.1s ease}
+  button:active, select:active{transform:scale(0.96)}
   select{appearance:none;padding-right:20px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%23988f80' fill='none'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 6px center}
@@ -351,7 +370,12 @@
 
   /* ── info panel ── */
   #infoPanel{position:fixed;top:54px;right:6px;bottom:34px;width:330px;overflow-y:auto;z-index:6;
-    background:rgba(12,10,8,.96);border:1px solid var(--line-2);border-radius:4px;padding:10px 12px}
+    background:rgba(18,26,32,0.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(64,81,93,0.6);border-radius:8px;padding:12px;
+    box-shadow:-8px 8px 32px rgba(0,0,0,0.6);
+    transform:translateX(350px);opacity:0;pointer-events:none;visibility:hidden;
+    transition:transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s linear, visibility 0.3s}
+  #infoPanel.show{transform:translateX(0);opacity:1;pointer-events:auto;visibility:visible}
   #infoPanel h3{color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 5px;
     border-bottom:1px solid var(--line);padding-bottom:3px}
   #infoPanel h3:first-child{margin-top:0}
@@ -571,10 +595,10 @@
   </footer>
 </div>
 
-<div id="infoPanel" hidden></div>
+<div id="infoPanel"></div>
 
 <!-- display settings popover, anchored to the rail foot -->
-<div id="settingsPop" hidden>
+<div id="settingsPop">
   <div class="set-row"><span>Colormap</span>
     <select id="cmapSel" title="Colormap for all views">
       <option value="0">Gray</option>
@@ -611,7 +635,7 @@
   <div class="set-row" id="panelSizeRow" hidden><span>Panel sizes</span><button id="resetPanels">Reset equal</button></div>
 </div>
 
-<div id="commandOverlay" hidden>
+<div id="commandOverlay">
   <div id="commandPanel" role="dialog" aria-modal="true" aria-label="Command palette">
     <input id="commandSearch" type="search" autocomplete="off" placeholder="Go to a workspace or run a command…" aria-label="Search commands">
     <div id="commandList"></div>
@@ -620,7 +644,7 @@
 </div>
 
 <!-- mouse / touch / keyboard reference (? key, rail button) -->
-<div id="helpOverlay" hidden>
+<div id="helpOverlay">
   <div class="panel" role="dialog" aria-label="Controls reference">
     <h3>Mouse</h3>
     <div class="sc"><b>move crosshair</b><span><kbd>drag</kbd></span></div>
@@ -692,9 +716,10 @@ const S = {
    geometry-relative coordinates and DICOM UIDs, never pixels or patient metadata. */
 const ANNOTATIONS = { db:null, key:"", writeTimer:0 };
 function annotationKey(entry = S.seriesList[S.curIdx]){
-  const d = entry?.slices?.[0]?.ds;
+  const first = entry?.slices?.[0];
+  const d = first?.ds;
   const study = d?.string("x0020000d") || "study-unknown";
-  const series = d?.string("x0020000e") || "series-unknown";
+  const series = d?.string("x0020000e") || (first?.name ? `series-${first.name}` : "series-unknown");
   return `${study}/${series}`;
 }
 function openAnnotationDB(){
@@ -796,7 +821,7 @@ const SUPPORTED_TS = new Set([...UNCOMPRESSED, TS.RLE, TS.JPB,
    Application shell — routed workspaces around the imaging core
    ============================================================ */
 const APP = { page:"home", focus:false, commandIndex:0, commandMatches:[] };
-const appEsc = v => String(v ?? "").replace(/[<>&"]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[ch]));
+const appEsc = v => String(v ?? "").replace(/[<>&"'/]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;", "'":"&#x27;", "/":"&#x2F;" }[ch]));
 const dsText = (ds, tag, fallback="—") => {
   try { return (ds?.string(tag) || fallback).replace(/\^/g, " ").trim() || fallback; }
   catch { return fallback; }
@@ -938,10 +963,10 @@ function runCommand(i=APP.commandIndex){
   closeCommands(); cmd.run();
 }
 function openCommands(){
-  $("commandOverlay").hidden = false; $("commandSearch").value = ""; APP.commandIndex = 0;
+  $("commandOverlay").classList.add("show"); $("commandSearch").value = ""; APP.commandIndex = 0;
   renderCommands(); requestAnimationFrame(() => $("commandSearch").focus());
 }
-function closeCommands(){ $("commandOverlay").hidden = true; }
+function closeCommands(){ $("commandOverlay").classList.remove("show"); }
 
 document.querySelectorAll(".app-nav").forEach(b => b.onclick = () => navigate(b.dataset.page));
 $("commandBtn").onclick = openCommands;
@@ -959,8 +984,8 @@ $("seriesSearch").oninput = renderSeriesWorkspace;
 bindOpenActions();
 addEventListener("hashchange", () => navigate(location.hash.slice(1) || "home", false));
 addEventListener("keydown", e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); return $("commandOverlay").hidden ? openCommands() : closeCommands(); }
-  if (e.key === "Escape" && !$("commandOverlay").hidden){ e.preventDefault(); return closeCommands(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); return !$("commandOverlay").classList.contains("show") ? openCommands() : closeCommands(); }
+  if (e.key === "Escape" && $("commandOverlay").classList.contains("show")){ e.preventDefault(); return closeCommands(); }
   if (e.key === "Escape" && $("v3d").parentElement.classList.contains("tools-open")){ e.preventDefault(); set3DToolsOpen(false); return $("tools3dToggle").focus(); }
   if (e.altKey && /^[1-3]$/.test(e.key)) { e.preventDefault(); navigate(["home","viewer","series"][+e.key-1]); }
   if (APP.page === "viewer" && S.vol && e.key.toLowerCase() === "f" && !["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)){ e.preventDefault(); toggleFocus(); }
@@ -1249,7 +1274,7 @@ async function loadSeries(idx){
     $("drop").classList.add("hide");
     $("wl").classList.add("show");
     if (STUDY.active){ destroyStudyCells(); buildStudyCells(); }
-    if (!$("infoPanel").hidden) renderInfo();
+    if ($("infoPanel").classList.contains("show")) renderInfo();
     if (!Object.values(annotationSnapshot()).some(a => a.ruler || a.roi)) status("");
     // Honor the chosen layout on the first study loaded (default: Acquired series)
     if (!S.layoutInit){ S.layoutInit = true; const m = $("layoutSel").value; if (m !== "mpr") setLayout(m); }
@@ -1298,7 +1323,7 @@ const isLR = hv => axisOf(hv) === 0;           // horizontal screen axis is pati
 const convFlip = hv => S.neuro && isLR(hv);    // should this view be mirrored for the convention?
 const PLANE_COLOR = { AXIAL:"#ff5f5f", CORONAL:"#5fe884", SAGITTAL:"#ffd75f" };
 const COLOR_3D = "#ff87d7";
-const esc = s => s.replace(/[<>&"]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[ch])); // also quotes — used inside title="…"
+const esc = s => s.replace(/[<>&"'/]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;", "'":"&#x27;", "/":"&#x2F;" }[ch])); // also quotes — used inside title="…"
 
 /* Obliquity: worst deviation of the acquisition axes from the nearest patient
    axis (0° = squarely axial/coronal/sagittal). Shown as a badge + tilted chip. */
@@ -2379,27 +2404,29 @@ $("snap").onclick = () => {
 
 /* ── settings popover + controls-reference overlay ── */
 function toggleSettings(force){
-  const show = force !== undefined ? force : $("settingsPop").hidden;
-  $("settingsPop").hidden = !show;
+  const p = $("settingsPop");
+  const show = force !== undefined ? !!force : !p.classList.contains("show");
+  p.classList.toggle("show", show);
   press($("settingsBtn"), show);
 }
 $("settingsBtn").onclick = e => { e.stopPropagation(); toggleSettings(); };
 addEventListener("pointerdown", e => { // click-away closes the popover
-  if (!$("settingsPop").hidden && !$("settingsPop").contains(e.target) && !$("settingsBtn").contains(e.target))
+  if ($("settingsPop").classList.contains("show") && !$("settingsPop").contains(e.target) && !$("settingsBtn").contains(e.target))
     toggleSettings(false);
 });
 function toggleHelp(force){
   const o = $("helpOverlay");
-  o.hidden = force !== undefined ? !force : !o.hidden;
+  const show = force !== undefined ? !!force : !o.classList.contains("show");
+  o.classList.toggle("show", show);
 }
 $("helpBtn").onclick = () => toggleHelp();
-$("helpOverlay").onclick = () => toggleHelp(false);
+$("helpOverlay").onpointerdown = e => { if (e.target === $("helpOverlay")) toggleHelp(false); };
 
 addEventListener("keydown", e => {
-  if (e.key === "Escape" && !$("helpOverlay").hidden) return toggleHelp(false);
-  if (e.key === "Escape" && !$("settingsPop").hidden) return toggleSettings(false);
+  if (e.key === "Escape" && $("helpOverlay").classList.contains("show")) return toggleHelp(false);
+  if (e.key === "Escape" && $("settingsPop").classList.contains("show")) return toggleSettings(false);
   if (e.key === "Escape" && S.vol && !$("drop").classList.contains("hide")) return hideDrop();
-  if (e.key === "Escape" && !$("infoPanel").hidden) return toggleInfo(false);
+  if (e.key === "Escape" && $("infoPanel").classList.contains("show")) return toggleInfo(false);
   if (APP.page !== "viewer") return;
   if (["SELECT","INPUT","TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
   if (e.key === "?") return toggleHelp();
@@ -3038,9 +3065,10 @@ function updateInfoLive(){
 }
 function toggleInfo(force){
   const p = $("infoPanel");
-  p.hidden = force === undefined ? !p.hidden : !force;
-  press($("infoBtn"), !p.hidden);
-  if (!p.hidden) renderInfo();
+  const show = force !== undefined ? !!force : !p.classList.contains("show");
+  p.classList.toggle("show", show);
+  press($("infoBtn"), show);
+  if (show) renderInfo();
 }
 $("infoBtn").onclick = () => toggleInfo();
 
@@ -3794,6 +3822,17 @@ function init3D(){
   const canvas = $("v3d");
   if (R3){ R3.dispose(); R3 = null; }
   let renderer;
+  const onContextLoss = (e) => {
+    e.preventDefault();
+    console.warn("WebGL Context Lost!");
+    if (R3) { R3.dispose(); R3 = null; }
+  };
+  const onContextRestored = () => {
+    console.log("WebGL Context Restored. Re-initializing 3D.");
+    init3D();
+  };
+  canvas.addEventListener("webglcontextlost", onContextLoss, false);
+  canvas.addEventListener("webglcontextrestored", onContextRestored, false);
   try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, preserveDrawingBuffer:true }); } catch { return no3D(canvas); }
   if (!renderer.capabilities.isWebGL2){ renderer.dispose(); return no3D(canvas); }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -4100,6 +4139,8 @@ function init3D(){
     setHome(neuro){ goHome(neuro); },
     syncCrosshair(){ setCross(); syncRects(); if (clip.axis >= 0 || slicesOn) render(); },
     dispose(){
+      canvas.removeEventListener("webglcontextlost", onContextLoss);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
       ro.disconnect(); // else every past series' observer keeps resizing/rendering a disposed renderer
       rects.forEach(r => { r.geometry.dispose(); r.material.dispose(); });
       gz.forEach(r => r.dispose());
