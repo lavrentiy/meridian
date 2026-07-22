@@ -1,0 +1,41 @@
+name: Changelog policy
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  require-changelog-entry:
+    name: Require CHANGELOG.md update
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify pull request updates the changelog
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          if ! grep -qx 'CHANGELOG.md' <<<"$changed_files"; then
+            echo "Every pull request must update CHANGELOG.md under Unreleased."
+            echo "Changed files:"
+            echo "$changed_files"
+            exit 1
+          fi
+
+          base_unreleased="$(
+            (git show "$BASE_SHA:CHANGELOG.md" 2>/dev/null || true) |
+              awk '/^## \[Unreleased\]/{capture=1; next} /^## \[/{capture=0} capture'
+          )"
+          head_unreleased="$(
+            awk '/^## \[Unreleased\]/{capture=1; next} /^## \[/{capture=0} capture' CHANGELOG.md
+          )"
+
+          if [[ "$base_unreleased" == "$head_unreleased" ]]; then
+            echo "The Unreleased section must contain this pull request's update."
+            exit 1
+          fi
