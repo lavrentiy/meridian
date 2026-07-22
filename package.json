@@ -1,0 +1,8 @@
+{
+  "name": "meridian",
+  "private": true,
+  "scripts": {
+    "test": "npm run test:browser",
+    "test:browser": "node tests/volume-renderer.browser-test.js"
+  }
+}

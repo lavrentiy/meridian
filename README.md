@@ -3,7 +3,7 @@
 **A local-first DICOM imaging workstation for study review, MPR, 3D, and series management.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Single file](https://img.shields.io/badge/build-single%20HTML%20file-black)
+![Single entry](https://img.shields.io/badge/build-single%20HTML%20entry-black)
 ![Offline](https://img.shields.io/badge/network-none-brightgreen)
 ![WebGL2](https://img.shields.io/badge/3D-WebGL2%20raycast-magenta)
 
@@ -11,7 +11,7 @@
 > **For research and education only — not a medical device.** Not cleared or
 > certified for clinical or diagnostic use. See [Disclaimer](#disclaimer).
 
-![Meridian — linked sagittal / coronal / axial MPR](docs/hero.png)
+![Meridian — linked sagittal, coronal, and axial acquired series](docs/hero.png)
 
 Open [index.html](index.html) to enter the Meridian workstation. Its routed
 Overview, Viewer, and Series workspaces stay inside one portable offline HTML
@@ -58,9 +58,12 @@ python3 -m http.server 8137 --bind 127.0.0.1
 - **Honest reformats** — each view is tagged **ACQUIRED**, **REFORMAT**, or
   **RENDERED**, and shows its effective pixel size, so lower through-plane
   resolution is always visible. Oblique stacks get an angle badge.
-- **3D volume and density transfer** — MIP, depth-colored MIP, or
-  gradient-shaded composite with HU-aware soft-tissue, bone, and lung isolation,
-  a manual density band, four color gradients, slice outlines, and clipping.
+- **Advanced volume rendering** — half-float MIP, depth MIP, composite,
+  and surface rendering with HU-aware soft-tissue, bone, lung, vascular, and
+  layered tissue/bone transfer functions. A live histogram, custom density
+  band, adaptive refinement, crop box, oblique-aware clipping, filled MPR
+  planes, patient-axis camera views, and a maximized Volume workspace remain
+  linked to the source crosshair.
 - **Cine and quantitative review** — loop the hovered acquired stack or MPR
   plane at 6–24 fps, and draw a slice-attached elliptical ROI for physical area,
   mean, and standard deviation. ROI results always come from source voxels, not
@@ -97,10 +100,33 @@ python3 -m http.server 8137 --bind 127.0.0.1
 | Cine playback | `Space` loops the hovered stack; set 6–24 fps in Display settings |
 | Invert · Colormap · Mirror | `I` / header selectors / per-view ⇋ |
 | Snapshot | save all four views as PNG |
-| 3D | drag to rotate, wheel to zoom; buttons for render mode, slice outlines, clip |
+| 3D orbit / pan / zoom | drag · `Shift`-drag · wheel/pinch or `+`/`−` |
+| 3D presentation | render/transfer presets, filled slices, crop box, crosshair clip, patient-axis views |
+| Maximize 3D | **Expand** in the 3D controls; **Restore** or `Esc` to return |
 
 An **Info** button opens patient / study / series / slicing details (thickness,
 claimed vs. measured spacing, obliquity, live slice position and angle).
+
+## Validation
+
+The browser regression has no npm dependencies. It requires Node.js 22 or
+newer, Python 3, and a `google-chrome` executable. It boots the real entrypoint,
+injects a synthetic calibrated CT volume, renders through WebGL2, exercises
+advanced 3D controls and oblique planes, reinitializes the renderer, and forces
+a WebGL context loss/restoration cycle:
+
+```bash
+npm run test:browser
+```
+
+See [Advanced volume renderer](docs/volume-renderer.md) for the rendering
+contract, fallback behavior, and remaining validation work.
+
+## Contributing
+
+Every change must update [CHANGELOG.md](CHANGELOG.md) under **Unreleased**.
+This is enforced for pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+the required entry format, privacy rules, and validation expectations.
 
 ## Test data
 

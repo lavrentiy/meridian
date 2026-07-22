@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Meridian — single-file, fully offline DICOM MPR and 3D volume viewer. Linked axial/coronal/sagittal reformats, WebGL2 raycast rendering, straightened-spine CPR. Runs entirely in the browser tab; no upload.">
+<meta name="description" content="Meridian — single-entry, fully offline DICOM MPR and 3D volume viewer. Linked axial/coronal/sagittal reformats, WebGL2 raycast rendering, straightened-spine CPR. Runs entirely in the browser tab; no upload.">
 <title>Meridian — DICOM MPR &amp; volume viewer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%231a252d'/%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='%2340515d'/%3E%3Cpath d='M12 3v18' stroke='%23ffd75f' stroke-width='1.7'/%3E%3Cpath d='M3 12h18' stroke='%23ff5f5f' stroke-width='1.7'/%3E%3Cpath d='M5 19 19 5' stroke='%235fe884' stroke-width='1.7'/%3E%3Ccircle cx='12' cy='12' r='1.7' fill='%2300a6b5'/%3E%3C/svg%3E">
 <script src="lib/dicomParser.min.js"></script>
@@ -351,7 +351,8 @@
   .study-cell.primary .tag::after{content:"PRIMARY";font-size:9px;letter-spacing:.1em;padding:1px 5px;border-radius:2px;color:var(--pc,var(--accent));border:1px solid currentColor}
   .cell.cine-target{border-color:var(--orange)!important;box-shadow:inset 0 0 0 1px var(--orange),0 0 16px -6px var(--orange)}
 
-  #v3d{display:block;width:100%;height:100%}
+  #v3d{display:block;width:100%;height:100%;touch-action:none;outline:0}
+  #v3d:focus-visible{box-shadow:inset 0 0 0 2px var(--magenta)}
   #tools3dToggle{display:none;position:absolute;top:6px;right:8px;z-index:4;min-height:32px;height:32px;padding:0 9px;align-items:center;gap:6px;
     color:var(--text);background:rgba(12,18,22,.9);border-color:var(--line-2);box-shadow:0 2px 8px rgba(0,0,0,.4)}
   #tools3dToggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
@@ -362,11 +363,25 @@
   .cell.tools-compact .tools3d{display:none;top:44px;max-width:calc(100% - 12px);background:rgba(12,18,22,.96);border:1px solid var(--line-2);box-shadow:0 8px 24px rgba(0,0,0,.55)}
   .cell.tools-compact.tools-open .tools3d{display:flex}
   .tools3d input[type=range]{width:72px;accent-color:var(--magenta)}
-  #tfPanel{position:absolute;top:48px;right:7px;z-index:5;width:250px;padding:11px 12px;background:rgba(20,18,16,.96);border:1px solid var(--line-2);border-radius:7px;box-shadow:0 10px 32px rgba(0,0,0,.55)}
-  .cell.tools-compact #tfPanel{top:128px}
-  #tfPanel label{display:grid;grid-template-columns:45px 1fr 66px;align-items:center;gap:8px;font:9px var(--mono);color:var(--dim);margin:5px 0}
-  #tfPanel input{width:100%;accent-color:var(--magenta)}#tfPanel output{text-align:right;color:var(--text)}
-  @media(max-width:820px){.cell.tools-compact #tfPanel{position:fixed;top:auto;right:10px;bottom:96px;width:calc(100vw - 68px)}}
+  #tfPanel,#cropPanel{position:absolute;top:48px;right:7px;z-index:5;width:278px;padding:11px 12px;background:rgba(12,18,22,.97);border:1px solid var(--line-2);border-radius:7px;box-shadow:0 10px 32px rgba(0,0,0,.55)}
+  .cell.tools-compact #tfPanel,.cell.tools-compact #cropPanel{top:128px}
+  #tfPanel label,#cropPanel label{display:grid;grid-template-columns:48px 1fr 68px;align-items:center;gap:8px;font:9px var(--mono);color:var(--dim);margin:6px 0}
+  #tfPanel input,#cropPanel input{width:100%;accent-color:var(--magenta)}#tfPanel output,#cropPanel output{text-align:right;color:var(--text)}
+  #tfHistogram{display:block;width:100%;height:54px;margin:2px 0 9px;border:1px solid var(--line);border-radius:3px;background:#080c0f}
+  #cropPanel h4{font:600 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim);margin-bottom:8px}
+  #cropPanel .crop-pair{display:grid;grid-template-columns:28px 1fr 1fr;align-items:center;gap:7px;margin:7px 0}
+  #cropPanel .crop-pair span{font:600 9px var(--mono);color:var(--dim)}
+  #cropReset{width:100%;margin-top:7px}
+  #volumeStatus{position:absolute;left:8px;bottom:7px;z-index:4;display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:4px;background:rgba(0,0,0,.62);font:9px/1.2 var(--mono);color:var(--dim);pointer-events:none}
+  #volumeStatus i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+  #volumeStatus[data-state="interactive"] i{background:var(--orange)}
+  #volumeStatus[data-state="error"]{color:#ffc0b8}#volumeStatus[data-state="error"] i{background:var(--red)}
+  .cell.volume-max{position:fixed!important;left:52px!important;right:0!important;top:48px!important;bottom:27px!important;width:auto!important;height:auto!important;z-index:19;border-color:var(--magenta)!important;box-shadow:0 0 0 1px var(--magenta),0 18px 70px #000}
+  body.focus-mode .cell.volume-max{left:0!important}
+  @media(max-width:820px){
+    .cell.tools-compact #tfPanel,.cell.tools-compact #cropPanel{position:fixed;top:auto;right:10px;bottom:96px;width:calc(100vw - 68px)}
+    .cell.volume-max{left:0!important;top:48px!important;bottom:85px!important}
+  }
 
   /* ── info panel ── */
   #infoPanel{position:fixed;top:54px;right:6px;bottom:34px;width:330px;overflow-y:auto;z-index:6;
@@ -498,32 +513,49 @@
       <button class="rot" data-k="YZ" aria-label="Tilt sagittal slice" title="Drag to tilt the slice (oblique) · double-click to reset"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.6 7.2A6.2 6.2 0 1 0 16 12"/><path d="M12.5 4.2h3.8V8"/></svg><span class="touch-label">Tilt</span></button>
       <span class="om t"></span><span class="om b"></span><span class="om l"></span><span class="om r"></span>
       <input type="range" class="slice-slider v" id="sYZ" min="0" value="0" step="1" aria-label="Slice YZ"></div>
-    <div class="cell mpr"><canvas id="v3d"></canvas><div class="tag"><span class="lbl">3D VOLUME</span><em class="syn">RENDERED</em></div>
+    <div class="cell mpr"><canvas id="v3d" tabindex="0" aria-label="Interactive advanced volume rendering. Drag to orbit, shift-drag to pan, and use plus or minus to zoom."></canvas><div class="tag"><span class="lbl">ADVANCED VOLUME</span><em class="syn">RENDERED</em></div>
       <button id="tools3dToggle" aria-controls="tools3dControls" aria-expanded="false" title="Open 3D controls"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5h12M3 9h12M3 13h12"/><circle cx="11.5" cy="5" r="1.5" fill="var(--panel)"/><circle cx="6.5" cy="9" r="1.5" fill="var(--panel)"/><circle cx="12.5" cy="13" r="1.5" fill="var(--panel)"/></svg><span>3D controls</span></button>
       <div class="tools3d" id="tools3dControls" role="group" aria-label="3D rendering controls">
         <select id="mode3d" title="Render mode">
           <option value="0">MIP</option>
           <option value="2" selected>Depth MIP</option>
           <option value="1">Composite</option>
+          <option value="3">Surface</option>
         </select>
         <select id="tf3d" title="Density transfer function — isolate material ranges">
           <option value="full">All densities</option>
           <option value="soft">Soft tissue</option>
           <option value="bone">Bone</option>
           <option value="lung">Lung / air</option>
+          <option value="vascular">Vascular</option>
+          <option value="mixed">Tissue + bone</option>
           <option value="custom">Custom band…</option>
         </select>
-        <button id="slices3d" class="active" title="Show crosshair slice-plane outlines">Slices</button>
+        <select id="slices3d" title="Crosshair slice planes">
+          <option value="0">Slices off</option>
+          <option value="1" selected>Slice outlines</option>
+          <option value="2">Filled slices</option>
+        </select>
         <select id="clip3d" title="Cut away at the crosshair plane (camera side)">
           <option value="-1">No clip</option>
           <option value="0">Clip X</option>
           <option value="1">Clip Y</option>
           <option value="2">Clip Z</option>
         </select>
+        <select id="view3d" title="Camera view">
+          <option value="home">Perspective</option>
+          <option value="anterior">Anterior</option><option value="posterior">Posterior</option>
+          <option value="left">Left</option><option value="right">Right</option>
+          <option value="superior">Superior</option><option value="inferior">Inferior</option>
+        </select>
+        <button id="crop3d" aria-expanded="false" aria-controls="cropPanel" title="Open six-sided crop box">Crop</button>
+        <button id="expand3d" aria-pressed="false" title="Maximize advanced volume">Expand</button>
         <input type="range" id="density3d" min="0" max="1" step="0.01" value="0.5" title="Density (Composite) / contrast (MIP)" aria-label="3D density">
       </div>
-      <div id="tfPanel" hidden><label><span>LOW</span><input id="tfLow" type="range" min="0" max="1" step="0.002" value="0"><output id="tfLowVal">MIN</output></label><label><span>HIGH</span><input id="tfHigh" type="range" min="0" max="1" step="0.002" value="1"><output id="tfHighVal">MAX</output></label></div>
-      <div class="info r">drag rotate · wheel/pinch zoom</div>
+      <div id="tfPanel" hidden><canvas id="tfHistogram" width="252" height="54" aria-label="Volume density histogram"></canvas><label><span>LOW</span><input id="tfLow" type="range" min="0" max="1" step="0.002" value="0"><output id="tfLowVal">MIN</output></label><label><span>HIGH</span><input id="tfHigh" type="range" min="0" max="1" step="0.002" value="1"><output id="tfHighVal">MAX</output></label><label><span>OPACITY</span><input id="tfOpacity" type="range" min="0.05" max="2" step="0.05" value="1"><output id="tfOpacityVal">1.00×</output></label></div>
+      <div id="cropPanel" hidden><h4>VOLUME CROP · MIN / MAX</h4><div class="crop-pair"><span>X</span><input id="cropX0" type="range" min="0" max="1" step="0.005" value="0" aria-label="Crop X minimum"><input id="cropX1" type="range" min="0" max="1" step="0.005" value="1" aria-label="Crop X maximum"></div><div class="crop-pair"><span>Y</span><input id="cropY0" type="range" min="0" max="1" step="0.005" value="0" aria-label="Crop Y minimum"><input id="cropY1" type="range" min="0" max="1" step="0.005" value="1" aria-label="Crop Y maximum"></div><div class="crop-pair"><span>Z</span><input id="cropZ0" type="range" min="0" max="1" step="0.005" value="0" aria-label="Crop Z minimum"><input id="cropZ1" type="range" min="0" max="1" step="0.005" value="1" aria-label="Crop Z maximum"></div><button id="cropReset">Reset full volume</button></div>
+      <div id="volumeStatus" data-state="ready"><i></i><span>volume ready</span></div>
+      <div class="info r">drag orbit · shift-drag pan · wheel/pinch zoom</div>
     </div>
   </div>
 
@@ -655,6 +687,8 @@
     <div class="sc"><b>reset view</b><span><kbd>double-click</kbd></span></div>
     <div class="sc"><b>oblique tilt</b><span><kbd>⟳ handle</kbd> drag</span></div>
     <div class="sc"><b>3D orbit</b><span><kbd>drag</kbd> in 3D view</span></div>
+    <div class="sc"><b>3D pan</b><span><kbd>⇧</kbd> <kbd>drag</kbd></span></div>
+    <div class="sc"><b>3D zoom</b><span><kbd>wheel</kbd> / <kbd>pinch</kbd> / <kbd>+</kbd><kbd>−</kbd></span></div>
     <div class="sc"><b>resize 1-row/column panels</b><span><kbd>drag</kbd> divider</span></div>
     <h3>Touch</h3>
     <div class="sc"><b>move crosshair</b><span><kbd>drag</kbd></span></div>
@@ -849,6 +883,7 @@ function navigate(page, updateHash=true){
     if (location.hash !== "#home") history.replaceState(null,"","#home");
   }
   if (page !== "viewer" && APP.focus) toggleFocus(false);
+  if (page !== "viewer" && $("v3d").parentElement.classList.contains("volume-max")) toggleVolumeMax(false);
   if (page !== "viewer" && typeof stopCine === "function") stopCine();
   APP.page = page;
   $("homePage").hidden = page !== "home";
@@ -943,6 +978,7 @@ function commandItems(){
   if (S.vol) items.push(
     {icon:"ACQ",label:"Viewer: Acquired series",hint:"LAYOUT",run:()=>{ $("layoutSel").value="study"; setLayout("study"); navigate("viewer"); }},
     {icon:"3D",label:"Viewer: MPR + 3D",hint:"LAYOUT",run:()=>{ $("layoutSel").value="mpr"; setLayout("mpr"); navigate("viewer"); }},
+    {icon:"VOL",label:$("v3d").parentElement.classList.contains("volume-max") ? "Restore MPR + 3D layout" : "Maximize Advanced Volume",hint:"3D",run:()=>{ $("layoutSel").value="mpr";setLayout("mpr");navigate("viewer");requestAnimationFrame(()=>toggleVolumeMax()); }},
     {icon:"F",label:APP.focus ? "Exit distraction-free viewer" : "Enter distraction-free viewer",hint:"VIEW",run:()=>{ navigate("viewer"); toggleFocus(); }},
     {icon:"PNG",label:"Save viewer snapshot",hint:"EXPORT",run:()=>$("snap").click()}
   );
@@ -986,6 +1022,7 @@ addEventListener("hashchange", () => navigate(location.hash.slice(1) || "home", 
 addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); return !$("commandOverlay").classList.contains("show") ? openCommands() : closeCommands(); }
   if (e.key === "Escape" && $("commandOverlay").classList.contains("show")){ e.preventDefault(); return closeCommands(); }
+  if (e.key === "Escape" && $("v3d").parentElement.classList.contains("volume-max")){ e.preventDefault(); return toggleVolumeMax(false); }
   if (e.key === "Escape" && $("v3d").parentElement.classList.contains("tools-open")){ e.preventDefault(); set3DToolsOpen(false); return $("tools3dToggle").focus(); }
   if (e.altKey && /^[1-3]$/.test(e.key)) { e.preventDefault(); navigate(["home","viewer","series"][+e.key-1]); }
   if (APP.page === "viewer" && S.vol && e.key.toLowerCase() === "f" && !["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)){ e.preventDefault(); toggleFocus(); }
@@ -2373,6 +2410,7 @@ $("cmapSel").onchange = () => {
 
 $("snap").onclick = () => {
   if (!S.vol) return;
+  R3?.prepareSnapshot(); // preserveDrawingBuffer stays off; render immediately before the synchronous canvas copy
   let cells;
   if (STUDY.active) cells = STUDY.cells.filter(c => c.canvas).map(c => ({ el:c.canvas, pw:c.pw, ph:c.ph, mir:c.mirror }));
   else {
@@ -3194,6 +3232,7 @@ $("crossOnly").querySelector("input").onchange = e => {
 };
 function setLayout(mode){
   stopCine();
+  if (mode === "study" && $("v3d").parentElement.classList.contains("volume-max")) toggleVolumeMax(false);
   if (S.rotK) obExit(); // the study grid has no oblique state — leave clean
   STUDY.active = mode === "study";
   $("gridSel").hidden = !STUDY.active;
@@ -3764,16 +3803,20 @@ new ResizeObserver(() => layoutCells()).observe($("grid"));
 addEventListener("resize", () => layoutCells()); // fallback for embedded/emulated viewports
 
 /* ============================================================
-   3D — WebGL2 raycast (MIP / composite) via three.js
+   Advanced volume — WebGL2 MIP / composite / surface raycast
    ============================================================ */
 let R3 = null;
+const volumeStatus = (message, state="ready") => {
+  const el = $("volumeStatus");
+  el.dataset.state = state; el.querySelector("span").textContent = message;
+};
 function sync3DToolDisclosure(){
   const cell = $("v3d").parentElement, compact = cell.classList.contains("tools-compact");
   if (!compact) cell.classList.remove("tools-open");
   const open = compact && cell.classList.contains("tools-open");
   $("tools3dToggle").setAttribute("aria-expanded", String(open));
   $("tools3dToggle").title = open ? "Close 3D controls" : "Open 3D controls";
-  if (compact && !open) $("tfPanel").hidden = true;
+  if (compact && !open){ $("tfPanel").hidden = true; $("cropPanel").hidden = true; }
   else if ($("tf3d").value === "custom") $("tfPanel").hidden = false;
 }
 function set3DToolsOpen(on){
@@ -3784,8 +3827,23 @@ function set3DToolsOpen(on){
 $("tools3dToggle").onclick = () => set3DToolsOpen(!$("v3d").parentElement.classList.contains("tools-open"));
 addEventListener("pointerdown", e => {
   const cell = $("v3d").parentElement;
-  if (cell.classList.contains("tools-open") && !e.target.closest?.("#tools3dToggle,#tools3dControls,#tfPanel")) set3DToolsOpen(false);
+  if (cell.classList.contains("tools-open") && !e.target.closest?.("#tools3dToggle,#tools3dControls,#tfPanel,#cropPanel")) set3DToolsOpen(false);
 });
+function toggleVolumeMax(force){
+  const cell = $("v3d").parentElement;
+  const on = force === undefined ? !cell.classList.contains("volume-max") : !!force;
+  cell.classList.toggle("volume-max", on);
+  press($("expand3d"), on); $("expand3d").textContent = on ? "Restore" : "Expand";
+  $("expand3d").title = on ? "Restore MPR + 3D layout (Esc)" : "Maximize advanced volume";
+  requestAnimationFrame(() => { layoutCells(); R3?.resize(); if (on) $("v3d").focus(); });
+}
+$("expand3d").onclick = () => toggleVolumeMax();
+function toggleCropPanel(force){
+  const panel = $("cropPanel"), on = force === undefined ? panel.hidden : !!force;
+  panel.hidden = !on; $("crop3d").setAttribute("aria-expanded", String(on));
+  if (on) $("tfPanel").hidden = true;
+}
+$("crop3d").onclick = () => toggleCropPanel();
 const isCTVolume = () => S.seriesList[S.curIdx]?.modality === "CT";
 function normDensity(value){
   const a=S.minV*S.slope+S.intercept, b=S.maxV*S.slope+S.intercept;
@@ -3794,12 +3852,52 @@ function normDensity(value){
 function densityValue(q){ return (S.minV+(S.maxV-S.minV)*q)*S.slope+S.intercept; }
 function transferPreset(name){
   if (name === "full") return [0,1];
-  if (!isCTVolume()) return name === "bone" ? [.55,1] : name === "lung" ? [0,.3] : [.18,.58];
-  const hu = name === "bone" ? [150,3000] : name === "lung" ? [-1000,-250] : [-150,350];
+  if (!isCTVolume()) return name === "bone" ? [.55,1] : name === "lung" ? [0,.3] : name === "vascular" ? [.42,.76] : name === "mixed" ? [.16,1] : [.18,.58];
+  const hu = name === "bone" ? [100,3000] : name === "lung" ? [-1000,-250] : name === "vascular" ? [80,700] : name === "mixed" ? [-180,3000] : [-150,350];
   return [normDensity(hu[0]),normDensity(hu[1])].sort((a,b)=>a-b);
 }
 function densityLabel(q){
   const v=Math.round(densityValue(q)); return isCTVolume() ? `${v} HU` : String(v);
+}
+function transferStops(name, lo, hi){
+  const q = v => normDensity(v), stop = (x,r,g,b,a) => [Math.max(0,Math.min(1,x)),r,g,b,a];
+  if (!isCTVolume()){
+    const c = name === "bone" ? [1,.87,.68] : name === "lung" ? [.42,.72,1] : name === "vascular" ? [1,.3,.2] : [.92,.72,.62];
+    const w = Math.max(.025,(hi-lo)*.08);
+    return [stop(0,...c,0),stop(Math.max(0,lo-w),...c,0),stop(lo,...c,.035),stop((lo+hi)/2,...c,.13),stop(hi,...c,.04),stop(Math.min(1,hi+w),...c,0),stop(1,...c,0)];
+  }
+  if (name === "bone") return [stop(0,1,.84,.65,0),stop(q(100),1,.84,.65,0),stop(q(220),1,.78,.58,.04),stop(q(600),1,.9,.76,.22),stop(q(1600),1,1,.96,.48),stop(1,1,1,1,.55)];
+  if (name === "lung") return [stop(0,.3,.62,1,0),stop(q(-1000),.3,.62,1,.015),stop(q(-850),.36,.7,1,.09),stop(q(-500),.68,.82,1,.15),stop(q(-250),.9,.94,1,.02),stop(q(-150),1,1,1,0),stop(1,1,1,1,0)];
+  if (name === "vascular") return [stop(0,1,.2,.12,0),stop(q(80),1,.2,.12,0),stop(q(140),1,.24,.15,.04),stop(q(320),1,.42,.25,.24),stop(q(700),1,.78,.55,.06),stop(q(850),1,.9,.7,0),stop(1,1,1,1,0)];
+  if (name === "mixed") return [stop(0,.7,.45,.4,0),stop(q(-180),.7,.45,.4,0),stop(q(-80),.78,.47,.42,.025),stop(q(80),.92,.62,.5,.075),stop(q(180),1,.74,.55,.025),stop(q(250),1,.82,.62,.055),stop(q(700),1,.91,.75,.22),stop(q(1800),1,1,.96,.48),stop(1,1,1,1,.5)];
+  if (name === "soft") return [stop(0,.7,.42,.38,0),stop(q(-180),.7,.42,.38,0),stop(q(-100),.72,.42,.38,.025),stop(q(20),.9,.58,.48,.11),stop(q(90),1,.72,.6,.15),stop(q(250),1,.86,.74,.025),stop(q(380),1,1,1,0),stop(1,1,1,1,0)];
+  if (name === "full") return [stop(0,.08,.08,.1,.005),stop(.2,.24,.27,.32,.012),stop(.48,.58,.61,.64,.035),stop(.75,.86,.83,.78,.07),stop(1,1,1,1,.12)];
+  const w = Math.max(.01,(hi-lo)*.06);
+  return [stop(0,.9,.45,.7,0),stop(Math.max(0,lo-w),.9,.45,.7,0),stop(lo,.95,.5,.72,.04),stop((lo+hi)/2,1,.72,.82,.14),stop(hi,1,.9,.94,.045),stop(Math.min(1,hi+w),1,.9,.94,0),stop(1,1,1,1,0)];
+}
+function transferLUT(name, lo, hi){
+  const stops = transferStops(name,lo,hi).sort((a,b)=>a[0]-b[0]), data = new Uint8Array(256*4);
+  for (let i=0;i<256;i++){
+    const q=i/255; let a=stops[0], b=stops[stops.length-1];
+    for (let j=1;j<stops.length;j++) if (q <= stops[j][0]){ a=stops[j-1]; b=stops[j]; break; }
+    const t=Math.max(0,Math.min(1,(q-a[0])/Math.max(1e-6,b[0]-a[0]))), o=i*4;
+    for (let k=0;k<4;k++) data[o+k]=Math.round((a[k+1]+(b[k+1]-a[k+1])*t)*255);
+  }
+  return data;
+}
+function draw3DHistogram(lut, lo, hi){
+  const cv=$("tfHistogram"), ctx=cv.getContext("2d"), bins=new Uint32Array(128), vol=S.vol;
+  if (!vol) return;
+  const step=Math.max(1,Math.floor(vol.length/160000)); let peak=1;
+  for (let i=0;i<vol.length;i+=step){ const b=Math.max(0,Math.min(127,Math.floor((vol[i]-S.minV)/Math.max(1,S.maxV-S.minV)*127))); peak=Math.max(peak,++bins[b]); }
+  ctx.clearRect(0,0,cv.width,cv.height);
+  for (let x=0;x<cv.width;x++){
+    const q=x/(cv.width-1), o=Math.round(q*255)*4;
+    ctx.fillStyle=`rgba(${lut[o]},${lut[o+1]},${lut[o+2]},${.18+.72*lut[o+3]/255})`; ctx.fillRect(x,0,1,cv.height);
+  }
+  ctx.fillStyle="rgba(231,238,242,.58)";
+  for (let i=0;i<128;i++){ const h=Math.log1p(bins[i])/Math.log1p(peak)*(cv.height-6); ctx.fillRect(i/128*cv.width,cv.height-h,Math.ceil(cv.width/128),h); }
+  ctx.strokeStyle="rgba(255,255,255,.86)"; ctx.beginPath(); ctx.moveTo(lo*cv.width,0); ctx.lineTo(lo*cv.width,cv.height); ctx.moveTo(hi*cv.width,0); ctx.lineTo(hi*cv.width,cv.height); ctx.stroke();
 }
 function applyTransfer(name=$("tf3d").value){
   let lo=+$('tfLow').value, hi=+$('tfHigh').value;
@@ -3810,62 +3908,108 @@ function applyTransfer(name=$("tf3d").value){
   $("tfLow").value=lo; $("tfHigh").value=hi;
   $("tfLowVal").textContent=densityLabel(lo); $("tfHighVal").textContent=densityLabel(hi);
   const cell = $("v3d").parentElement;
+  if (name === "custom" && !$("cropPanel").hidden){ $("cropPanel").hidden=true; $("crop3d").setAttribute("aria-expanded","false"); }
   $("tfPanel").hidden = name !== "custom" || (cell.classList.contains("tools-compact") && !cell.classList.contains("tools-open"));
-  if (R3) R3.setTransfer(lo,hi);
+  const lut=transferLUT(name,lo,hi); draw3DHistogram(lut,lo,hi);
+  if (R3) R3.setTransfer(lut,lo,hi);
   return [lo,hi];
 }
 $("tf3d").onchange = e => applyTransfer(e.target.value);
 $("tfLow").oninput = e => { if (+e.target.value > +$("tfHigh").value-.01) e.target.value=+$("tfHigh").value-.01; applyTransfer("custom"); };
 $("tfHigh").oninput = e => { if (+e.target.value < +$("tfLow").value+.01) e.target.value=+$("tfLow").value+.01; applyTransfer("custom"); };
+$("tfOpacity").oninput = e => { $("tfOpacityVal").textContent=(+e.target.value).toFixed(2)+"×"; R3?.setOpacity(+e.target.value); };
+const cropIds = [["cropX0","cropX1"],["cropY0","cropY1"],["cropZ0","cropZ1"]];
+function cropRange(){ return cropIds.map(([a,b]) => [+$(a).value,+$(b).value]); }
+function applyCrop(changed){
+  if (changed){
+    const pair=cropIds.find(ids => ids.includes(changed.id));
+    if (pair){
+      const a=$(pair[0]), b=$(pair[1]), gap=.02;
+      if (changed===a && +a.value > +b.value-gap) a.value=Math.max(0,+b.value-gap);
+      if (changed===b && +b.value < +a.value+gap) b.value=Math.min(1,+a.value+gap);
+    }
+  }
+  const r=cropRange(); R3?.setCrop(r.map(x=>x[0]),r.map(x=>x[1]));
+}
+cropIds.flat().forEach(id => $(id).oninput = e => applyCrop(e.target));
+$("cropReset").onclick = () => { cropIds.forEach(([a,b]) => { $(a).value=0; $(b).value=1; }); applyCrop(); };
+function volumeProxyFactor(nx,ny,nz,max3D,budgetBytes,bytesPerVoxel=2){
+  const byLimit=Math.max(1,Math.ceil(Math.max(nx,ny,nz)/Math.max(1,max3D)));
+  const byMemory=Math.max(1,Math.ceil(Math.cbrt(nx*ny*nz*bytesPerVoxel/Math.max(1,budgetBytes))));
+  return Math.max(byLimit,byMemory);
+}
 
 function init3D(){
   const canvas = $("v3d");
   if (R3){ R3.dispose(); R3 = null; }
-  let renderer;
+  let renderer, lost=false, restoring=false;
   const onContextLoss = (e) => {
     e.preventDefault();
-    console.warn("WebGL Context Lost!");
-    if (R3) { R3.dispose(); R3 = null; }
+    lost=true; volumeStatus("graphics context lost · waiting to restore", "error");
   };
   const onContextRestored = () => {
-    console.log("WebGL Context Restored. Re-initializing 3D.");
-    init3D();
+    if (restoring) return;
+    restoring=true; volumeStatus("restoring volume renderer…", "interactive");
+    requestAnimationFrame(() => init3D());
   };
   canvas.addEventListener("webglcontextlost", onContextLoss, false);
   canvas.addEventListener("webglcontextrestored", onContextRestored, false);
-  try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, preserveDrawingBuffer:true }); } catch { return no3D(canvas); }
-  if (!renderer.capabilities.isWebGL2){ renderer.dispose(); return no3D(canvas); }
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:"high-performance" }); }
+  catch { canvas.removeEventListener("webglcontextlost",onContextLoss); canvas.removeEventListener("webglcontextrestored",onContextRestored); return no3D(canvas); }
+  if (!renderer.capabilities.isWebGL2){ renderer.dispose(); canvas.removeEventListener("webglcontextlost",onContextLoss); canvas.removeEventListener("webglcontextrestored",onContextRestored); return no3D(canvas); }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
-  // Normalized uint8 volume (window applied in shader)
+  // Preserve 16-bit scalar fidelity on the GPU. If the volume exceeds a device's
+  // 3D-texture limit or a conservative device-scaled texture budget, build a uniformly
+  // downsampled rendering proxy; MPR/probes continue to use the source voxels.
   const { vol, nx, ny, nz, minV, maxV } = S;
-  const tfRange = transferPreset($("tf3d").value);
-  const norm = new Uint8Array(vol.length);
-  const scale = 255/((maxV-minV)||1);
-  for (let i=0;i<vol.length;i++) norm[i] = (vol[i]-minV)*scale;
-  const tex = new THREE.DataTexture3D(norm, nx, ny, nz);
-  tex.format = THREE.RedFormat; tex.type = THREE.UnsignedByteType;
-  tex.minFilter = tex.magFilter = THREE.LinearFilter;
+  const gl=renderer.getContext(), max3D=gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) || 256;
+  const budgetMB=(navigator.deviceMemory||4)<=4?64:128,budget=budgetMB*1048576,ds=volumeProxyFactor(nx,ny,nz,max3D,budget);
+  const tx=Math.ceil(nx/ds), ty=Math.ceil(ny/ds), tz=Math.ceil(nz/ds), norm=new Uint16Array(tx*ty*tz);
+  const scale=65535/((maxV-minV)||1),halfLUT=new Uint16Array(65536);
+  for(let i=1;i<65536;i++){
+    const q=i/65535;
+    if(q<Math.pow(2,-14)) halfLUT[i]=Math.round(q/Math.pow(2,-24));
+    else{let e=Math.floor(Math.log2(q)),mant=Math.round((q/Math.pow(2,e)-1)*1024);if(mant===1024){e++;mant=0;}halfLUT[i]=((e+15)<<10)|mant;}
+  }
+  let o=0;
+  for (let z=0;z<tz;z++) for (let y=0;y<ty;y++) for (let x=0;x<tx;x++){
+    const si=Math.min(nx-1,x*ds)+nx*(Math.min(ny-1,y*ds)+ny*Math.min(nz-1,z*ds));
+    norm[o++]=halfLUT[Math.max(0,Math.min(65535,Math.round((vol[si]-minV)*scale)))];
+  }
+  const tex = new THREE.DataTexture3D(norm, tx, ty, tz);
+  tex.format = THREE.RedFormat; tex.type = THREE.HalfFloatType; tex.internalFormat = "R16F";
+  tex.minFilter = tex.magFilter = gl.getExtension("OES_texture_float_linear") ? THREE.LinearFilter : THREE.NearestFilter;
   tex.unpackAlignment = 1; tex.needsUpdate = true;
+
+  const [tfLo,tfHi]=transferPreset($("tf3d").value), tfData=transferLUT($("tf3d").value,tfLo,tfHi);
+  const tfTex=new THREE.DataTexture(tfData,256,1,THREE.RGBAFormat,THREE.UnsignedByteType);
+  tfTex.minFilter=tfTex.magFilter=THREE.LinearFilter; tfTex.generateMipmaps=false; tfTex.needsUpdate=true;
 
   const px = nx*S.sx, py = ny*S.sy, pz = nz*S.sz, m = Math.max(px,py,pz);
   const size = new THREE.Vector3(px/m, py/m, pz/m);
+  const voxel = new THREE.Vector3(size.x/tx,size.y/ty,size.z/tz);
+  const highSteps=Math.min(900,Math.max(240,Math.ceil(Math.hypot(tx,ty,tz)*.82)));
+  const interactiveSteps=Math.max(96,Math.min(220,Math.ceil(highSteps*.34)));
 
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(38, 1, 0.01, 20);
   const mat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
     uniforms: {
-      u_data:{ value:tex }, u_size:{ value:size },
+      u_data:{ value:tex }, u_transfer:{ value:tfTex }, u_size:{ value:size },
       u_cam:{ value:new THREE.Vector3() },
       u_bmin:{ value:size.clone().multiplyScalar(-0.5) },
       u_bmax:{ value:size.clone().multiplyScalar(0.5) },
-      u_voxel:{ value:new THREE.Vector3(size.x/nx, size.y/ny, size.z/nz) },
+      u_crop0:{ value:new THREE.Vector3(0,0,0) }, u_crop1:{ value:new THREE.Vector3(1,1,1) },
+      u_clipPos:{ value:new THREE.Vector3() }, u_clipN:{ value:new THREE.Vector3(1,0,0) },
+      u_voxel:{ value:voxel }, u_refStep:{ value:Math.min(voxel.x,voxel.y,voxel.z) },
       u_lo:{ value:0 }, u_hi:{ value:1 },
       u_density:{ value:Math.pow(4, $("density3d").value*2-1) },
-      u_steps:{ value:350 }, u_mode:{ value:+$("mode3d").value },
+      u_opacity:{ value:+$("tfOpacity").value },
+      u_steps:{ value:highSteps }, u_mode:{ value:+$("mode3d").value }, u_clipOn:{value:0},
+      u_clipSign:{value:1},
       u_cmap:{ value:cmapIndex() }, u_invert:{ value:S.invert?1:0 },
-      u_tflo:{ value:tfRange[0] }, u_tfhi:{ value:tfRange[1] }
     },
     vertexShader: `
       out vec3 vPos;
@@ -3873,25 +4017,29 @@ function init3D(){
     fragmentShader: `
       precision highp float; precision highp sampler3D;
       in vec3 vPos; out vec4 outColor;
-      uniform sampler3D u_data; uniform vec3 u_size, u_cam, u_bmin, u_bmax, u_voxel;
-      uniform float u_lo, u_hi, u_density, u_tflo, u_tfhi; uniform int u_steps, u_mode, u_cmap, u_invert;
+      uniform sampler3D u_data; uniform sampler2D u_transfer;
+      uniform vec3 u_size, u_cam, u_bmin, u_bmax, u_voxel, u_crop0, u_crop1, u_clipPos, u_clipN;
+      uniform float u_lo, u_hi, u_density, u_opacity, u_refStep, u_clipSign;
+      uniform int u_steps, u_mode, u_cmap, u_invert, u_clipOn;
       vec2 hitBox(vec3 ro, vec3 rd){
         vec3 inv = 1.0/rd, t0 = (u_bmin-ro)*inv, t1 = (u_bmax-ro)*inv;
         vec3 tmin = min(t0,t1), tmax = max(t0,t1);
         return vec2(max(max(tmin.x,tmin.y),tmin.z), min(min(tmax.x,tmax.y),tmax.z));
       }
       float win(float s){ return clamp((s-u_lo)/max(u_hi-u_lo,1e-4),0.0,1.0); }
-      float samp(vec3 p){
-        float raw = texture(u_data, p/u_size + 0.5).r;
-        if (raw < u_tflo || raw > u_tfhi) return 0.0;
-        float g = win(raw);
-        return u_invert==1 ? 1.0-g : g;
+      float rawAt(vec3 p){ return texture(u_data, p/u_size + 0.5).r; }
+      float scalar(float raw){ float g=win(raw); return u_invert==1 ? 1.0-g : g; }
+      vec4 classify(float raw){ return texture(u_transfer,vec2(raw,.5)); }
+      bool clipped(vec3 p){
+        vec3 uv=p/u_size+.5;
+        if(any(lessThan(uv,u_crop0)) || any(greaterThan(uv,u_crop1))) return true;
+        return u_clipOn==1 && dot(p-u_clipPos,u_clipN)*u_clipSign>0.0;
       }
       vec3 grad(vec3 p){
         return vec3(
-          samp(p+vec3(u_voxel.x,0.,0.)) - samp(p-vec3(u_voxel.x,0.,0.)),
-          samp(p+vec3(0.,u_voxel.y,0.)) - samp(p-vec3(0.,u_voxel.y,0.)),
-          samp(p+vec3(0.,0.,u_voxel.z)) - samp(p-vec3(0.,0.,u_voxel.z)));
+          rawAt(p+vec3(u_voxel.x,0.,0.)) - rawAt(p-vec3(u_voxel.x,0.,0.)),
+          rawAt(p+vec3(0.,u_voxel.y,0.)) - rawAt(p-vec3(0.,u_voxel.y,0.)),
+          rawAt(p+vec3(0.,0.,u_voxel.z)) - rawAt(p-vec3(0.,0.,u_voxel.z)));
       }
       // polynomial fit of matplotlib inferno (perceptually uniform)
       vec3 inferno(float t){
@@ -3925,44 +4073,51 @@ function init3D(){
         t.x = max(t.x, 0.0);
         if (t.x >= t.y) discard;
         float dt = (t.y-t.x)/float(u_steps);
-        vec3 p = u_cam + rd*t.x;
+        float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);
+        vec3 p = u_cam + rd*(t.x+dt*jitter);
         float best = 0.0, bestT = t.x;
         vec4 acc = vec4(0.0);
+        vec3 surfaceCol=vec3(0.0); bool surfaceHit=false;
         for (int i=0;i<1000;i++){
           if (i>=u_steps) break;
-          float g = samp(p);
-          if (u_mode==1){
-            if (g > 0.003){
-              vec3 col = shade(g);
-              float a = g*g*0.06*u_density;
+          if(!clipped(p)){
+            float raw=rawAt(p), g=scalar(raw); vec4 tf=classify(raw);
+            if (u_mode==1 && tf.a>.001){
+              vec3 col = tf.rgb*(.42+.58*g);
+              float ratio=dt/max(u_refStep,1e-5);
+              float a = 1.0-exp(-tf.a*u_density*u_opacity*ratio);
               vec3 gr = grad(p);
               float gm = length(gr);
               if (gm > 1e-4){
-                float ndl = abs(dot(gr/gm, rd));           // headlight
-                col = col*(0.35 + 0.65*ndl) + vec3(0.25)*pow(ndl,32.0)*g;
-                a *= 0.2 + 0.8*clamp(gm*8.0, 0.0, 1.0);    // emphasize boundaries
+                float ndl = abs(dot(gr/gm, rd));
+                col = col*(0.32 + 0.68*ndl) + vec3(.18)*pow(ndl,28.0);
               }
               acc.rgb += (1.0-acc.a)*a*col;
               acc.a   += (1.0-acc.a)*a;
               if (acc.a > 0.98) break;
-            }
-          } else if (g > best){ best = g; bestT = t.x + float(i)*dt; }
+            } else if(u_mode==3 && tf.a>.025){
+              vec3 gr=grad(p), n=normalize(gr); float ndl=abs(dot(n,rd));
+              surfaceCol=tf.rgb*(.25+.75*ndl)+vec3(.22)*pow(ndl,32.0); surfaceHit=true; break;
+            } else if(u_mode!=1 && u_mode!=3 && tf.a>.001 && g > best){ best = g; bestT = t.x + float(i)*dt; }
+          }
           p += rd*dt;
         }
         if (u_mode==1){
           if (acc.a < 0.01) discard;
           outColor = vec4(acc.rgb, 1.0);
+        } else if(u_mode==3){
+          if(!surfaceHit) discard; outColor=vec4(surfaceCol,1.0);
         } else {
           best = pow(best, u_density);
           if (best < 0.01) discard;
           if (u_mode==2){
-            float d = clamp((bestT - t.x)/(0.75*length(u_size)), 0.0, 1.0);
+            float d = clamp((bestT - t.x)/max(t.y-t.x,1e-5), 0.0, 1.0);
             vec3 hue = mix(vec3(1.0,0.72,0.30), vec3(0.25,0.55,1.0), d); // warm near, cool far
             outColor = vec4(hue*best, 1.0);
           } else outColor = vec4(shade(best), 1.0);
         }
       }`,
-    side: THREE.BackSide, transparent: true
+    side: THREE.BackSide, transparent: true, depthWrite:false
   });
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
   // Rebase the box from voxel axes to PATIENT axes: world X = patient-left,
@@ -3975,16 +4130,17 @@ function init3D(){
   mesh.updateMatrixWorld(true); // applyCam's worldToLocal runs before the first render
   scene.add(mesh);
 
-  // Crosshair-synced clip plane: cut away the camera-side half so you look into the volume
+  // Crosshair-synced clip plane: its normal follows the true oblique MPR basis.
   const clip = { axis:+$("clip3d").value, pos:new THREE.Vector3() };
-  const setCross = () => clip.pos.set(
-    ((S.ix+0.5)/nx - 0.5)*size.x,
-    ((S.iy+0.5)/ny - 0.5)*size.y,
-    ((S.iz+0.5)/nz - 0.5)*size.z);
+  const setCross = () => {
+    const p=S.rotK&&OB.P ? [OB.P[0]/S.sx,OB.P[1]/S.sy,OB.P[2]/S.sz] : [S.ix,S.iy,S.iz];
+    clip.pos.set(((p[0]+.5)/nx-.5)*size.x,((p[1]+.5)/ny-.5)*size.y,((p[2]+.5)/nz-.5)*size.z);
+    mat.uniforms.u_clipPos.value.copy(clip.pos);
+  };
   setCross();
 
-  // Active slice-plane outlines, colored like their 2D views
-  let slicesOn = $("slices3d").classList.contains("active");
+  // Active slice-plane outlines and optional filled scalar planes.
+  let sliceMode=+$("slices3d").value;
   const mkRect = (axis, color) => {
     const hx = size.x/2, hy = size.y/2, hz = size.z/2;
     const pts = axis === 0 ? [[0,-hy,-hz],[0,hy,-hz],[0,hy,hz],[0,-hy,hz]]
@@ -4001,23 +4157,39 @@ function init3D(){
     mkRect(1, PLANE_COLOR[S.labels.XZ] || "#f0954e"),
     mkRect(2, PLANE_COLOR[S.labels.XY] || "#f0954e")
   ];
+  const planeGeometry = axis => {
+    const hx=size.x/2,hy=size.y/2,hz=size.z/2;
+    const p=axis===0?[[0,-hy,-hz],[0,hy,-hz],[0,hy,hz],[0,-hy,hz]]:axis===1?[[-hx,0,-hz],[hx,0,-hz],[hx,0,hz],[-hx,0,hz]]:[[-hx,-hy,0],[hx,-hy,0],[hx,hy,0],[-hx,hy,0]];
+    const g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.Float32BufferAttribute([p[0],p[1],p[2],p[0],p[2],p[3]].flat(),3)); return g;
+  };
+  const sliceUniforms={ u_data:{value:tex},u_size:{value:size},u_lo:mat.uniforms.u_lo,u_hi:mat.uniforms.u_hi,u_invert:mat.uniforms.u_invert,u_crop0:mat.uniforms.u_crop0,u_crop1:mat.uniforms.u_crop1,u_planeR:{value:new THREE.Matrix3()},u_cross:{value:clip.pos.clone()} };
+  const sliceMat=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,uniforms:sliceUniforms,vertexShader:`out vec3 vP;uniform mat3 u_planeR;uniform vec3 u_cross;void main(){vP=u_planeR*position+u_cross;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,fragmentShader:`precision highp float;precision highp sampler3D;in vec3 vP;out vec4 outColor;uniform sampler3D u_data;uniform vec3 u_size,u_crop0,u_crop1;uniform float u_lo,u_hi;uniform int u_invert;void main(){vec3 q=vP/u_size+.5;if(any(lessThan(q,u_crop0))||any(greaterThan(q,u_crop1)))discard;float g=clamp((texture(u_data,q).r-u_lo)/max(u_hi-u_lo,1e-4),0.,1.);if(u_invert==1)g=1.-g;outColor=vec4(vec3(g),.72);}`,side:THREE.DoubleSide,transparent:true,depthTest:false,depthWrite:false});
+  const filled=[0,1,2].map((axis,i)=>{const p=new THREE.Mesh(planeGeometry(axis),sliceMat);p.renderOrder=2;mesh.add(p);return p;});
   const syncRects = () => {
-    rects[0].position.x = clip.pos.x;
-    rects[1].position.y = clip.pos.y;
-    rects[2].position.z = clip.pos.z;
-    rects.forEach(r => r.visible = slicesOn);
+    const R=rotMatrix(), rm=new THREE.Matrix4().set(R[0],R[1],R[2],0,R[3],R[4],R[5],0,R[6],R[7],R[8],0,0,0,0,1), q=new THREE.Quaternion().setFromRotationMatrix(rm);
+    sliceUniforms.u_planeR.value.set(R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],R[8]);sliceUniforms.u_cross.value.copy(clip.pos);
+    [...rects,...filled].forEach(p=>{p.position.copy(clip.pos);p.quaternion.copy(q);});
+    rects.forEach(r => r.visible = sliceMode===1); filled.forEach(r=>r.visible=sliceMode===2);
   };
   syncRects();
-  $("slices3d").onclick = () => {
-    slicesOn = !slicesOn;
-    press($("slices3d"), slicesOn);
-    syncRects(); render();
-  };
+  $("slices3d").onchange = e => { sliceMode=+e.target.value;syncRects();render(); };
   const short = n => ({ AXIAL:"AX", CORONAL:"COR", SAGITTAL:"SAG" })[n] || n;
   const cs = $("clip3d"); // x fixes YZ view's plane, y XZ's, z XY's
   cs.options[1].textContent = `Clip ${short(S.labels.YZ)}`;
   cs.options[2].textContent = `Clip ${short(S.labels.XZ)}`;
   cs.options[3].textContent = `Clip ${short(S.labels.XY)}`;
+
+  const cropBase=new THREE.BoxGeometry(1,1,1),cropGeo=new THREE.EdgesGeometry(cropBase);cropBase.dispose();
+  const cropBox=new THREE.LineSegments(cropGeo,new THREE.LineBasicMaterial({color:COLOR_3D,transparent:true,opacity:.55,depthTest:false}));
+  cropBox.renderOrder=3;mesh.add(cropBox);
+  const setCrop=(a,b)=>{
+    const b0=mat.uniforms.u_bmin.value.set((a[0]-.5)*size.x,(a[1]-.5)*size.y,(a[2]-.5)*size.z);
+    const b1=mat.uniforms.u_bmax.value.set((b[0]-.5)*size.x,(b[1]-.5)*size.y,(b[2]-.5)*size.z);
+    mat.uniforms.u_crop0.value.set(...a);mat.uniforms.u_crop1.value.set(...b);
+    cropBox.position.copy(b0).add(b1).multiplyScalar(.5);cropBox.scale.copy(b1).sub(b0);
+    cropBox.visible=a.some(v=>v>.001)||b.some(v=>v<.999);render();
+  };
 
   // Patient-axis gizmo (corner overlay): L/R · A/P · S/I letters colored like
   // the plane each axis pierces — orbits with the camera
@@ -4050,25 +4222,34 @@ function init3D(){
   // ANTERIOR (patient-left on the viewer's right). Head-up in both.
   const HOME_PHI = Math.PI/2.6, HOME_R = 2.4;
   const homeTheta = neuro => neuro ? Math.PI*0.75 : Math.PI*0.25;
-  const orbit = { theta: homeTheta(S.neuro), phi: HOME_PHI, r: HOME_R };
-  const goHome = neuro => { orbit.theta = homeTheta(neuro); orbit.phi = HOME_PHI; orbit.r = HOME_R; render(); };
+  const orbit = { theta: homeTheta(S.neuro), phi: HOME_PHI, r: HOME_R, target:new THREE.Vector3() };
+  const goHome = neuro => { orbit.theta = homeTheta(neuro); orbit.phi = HOME_PHI; orbit.r = HOME_R;orbit.target.set(0,0,0);$("view3d").value="home";render(); };
+  const setView=view=>{
+    const views3={anterior:[0,Math.PI/2],posterior:[Math.PI,Math.PI/2],left:[Math.PI/2,Math.PI/2],right:[-Math.PI/2,Math.PI/2],superior:[0,.025],inferior:[0,Math.PI-.025]};
+    if(view==="home")return goHome(S.neuro);const v=views3[view];if(!v)return;orbit.theta=v[0];orbit.phi=v[1];orbit.target.set(0,0,0);render();
+  };
   const applyCam = () => {
     const { theta, phi, r } = orbit;
-    cam.position.set(r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.cos(theta));
-    cam.lookAt(0,0,0); cam.updateMatrixWorld();
+    cam.position.set(r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.cos(theta)).add(orbit.target);
+    cam.lookAt(orbit.target); cam.updateMatrixWorld();
     const cl = mat.uniforms.u_cam.value;
     cl.copy(mesh.worldToLocal(cam.position.clone()));
-    const b0 = mat.uniforms.u_bmin.value.set(-size.x/2, -size.y/2, -size.z/2);
-    const b1 = mat.uniforms.u_bmax.value.set(size.x/2, size.y/2, size.z/2);
     if (clip.axis >= 0){
-      const ax = "xyz"[clip.axis], c = clip.pos[ax];
-      if (cl[ax] >= c) b1[ax] = Math.max(c, b0[ax]+1e-4);
-      else b0[ax] = Math.min(c, b1[ax]-1e-4);
-    }
+      const key=["YZ","XZ","XY"][clip.axis], n=obBasis(key,rotMatrix()).n;
+      mat.uniforms.u_clipN.value.set(...n);mat.uniforms.u_clipSign.value=Math.sign(mat.uniforms.u_clipN.value.dot(cl.clone().sub(clip.pos)))||1;
+    } mat.uniforms.u_clipOn.value=clip.axis>=0?1:0;
   };
   let drag = null;
   const ptrs = new Map();            // active pointers for two-finger pinch
   let pinch = null;                  // {d, r}: finger distance + orbit radius at pinch start
+  const events=new AbortController(), opts={signal:events.signal};
+  let refineTimer=0;
+  const quality=(interactive=false)=>{
+    mat.uniforms.u_steps.value=interactive?interactiveSteps:highSteps;
+    volumeStatus(interactive?`interactive · ${interactiveSteps} samples`:(ds>1?`proxy ${tx}×${ty}×${tz} · ${highSteps} samples`:`full-res half-float · ${highSteps} samples`),interactive?"interactive":"ready");
+    render();clearTimeout(refineTimer);if(interactive)refineTimer=setTimeout(()=>quality(false),140);
+  };
+  canvas.addEventListener("contextmenu",e=>e.preventDefault(),opts);
   canvas.addEventListener("pointerdown", e => {
     canvas.setPointerCapture(e.pointerId);
     ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
@@ -4076,33 +4257,37 @@ function init3D(){
       const [a,b] = [...ptrs.values()];
       pinch = { d:Math.hypot(a.x-b.x, a.y-b.y), r:orbit.r }; drag = null; return;
     }
-    drag = { x:e.clientX, y:e.clientY }; mat.uniforms.u_steps.value = 160;
-  });
+    drag = { x:e.clientX, y:e.clientY, mode:e.shiftKey||e.button===1||e.button===2?"pan":"orbit" }; quality(true);
+  },opts);
   canvas.addEventListener("pointermove", e => {
     if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
     if (pinch){                      // fingers apart → smaller radius (closer)
       const [a,b] = [...ptrs.values()];
       if (!a || !b) return;
       const d = Math.hypot(a.x-b.x, a.y-b.y);
-      orbit.r = Math.min(6, Math.max(0.8, pinch.r * pinch.d/(d||1))); render(); return;
+      orbit.r = Math.min(6, Math.max(0.8, pinch.r * pinch.d/(d||1))); quality(true); return;
     }
     if (!drag || !e.buttons) return;
-    orbit.theta -= (e.clientX-drag.x)*0.008;
-    orbit.phi = Math.min(Math.PI-0.05, Math.max(0.05, orbit.phi - (e.clientY-drag.y)*0.008));
-    drag = { x:e.clientX, y:e.clientY }; render();
-  });
+    const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+    if(drag.mode==="pan"){
+      const me=cam.matrix.elements,right=new THREE.Vector3(me[0],me[1],me[2]),up=new THREE.Vector3(me[4],me[5],me[6]),s=orbit.r*.0015;
+      orbit.target.addScaledVector(right,-dx*s).addScaledVector(up,dy*s);
+    }else{orbit.theta-=dx*.008;orbit.phi=Math.min(Math.PI-.05,Math.max(.05,orbit.phi-dy*.008));$("view3d").value="home";}
+    drag = { x:e.clientX, y:e.clientY,mode:drag.mode }; quality(true);
+  },opts);
   const end3d = e => {
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) pinch = null;
-    if (ptrs.size === 0){ drag = null; mat.uniforms.u_steps.value = 350; render(); }
+    if (ptrs.size === 0){ drag = null; quality(false); }
   };
-  canvas.addEventListener("pointerup", end3d);
-  canvas.addEventListener("pointercancel", end3d);
-  canvas.addEventListener("wheel", e => { e.preventDefault(); orbit.r = Math.min(6, Math.max(0.8, orbit.r*(1+Math.sign(e.deltaY)*0.08))); render(); }, { passive:false });
-  canvas.addEventListener("dblclick", () => goHome(S.neuro)); // same reset gesture as the 2D views
-  $("mode3d").onchange = e => { mat.uniforms.u_mode.value = +e.target.value; render(); };
+  canvas.addEventListener("pointerup", end3d,opts);canvas.addEventListener("pointercancel", end3d,opts);
+  canvas.addEventListener("wheel", e => { e.preventDefault();orbit.r=Math.min(6,Math.max(.8,orbit.r*(1+Math.sign(e.deltaY)*.08)));quality(true); }, { passive:false,signal:events.signal });
+  canvas.addEventListener("dblclick", () => goHome(S.neuro),opts);
+  canvas.addEventListener("keydown",e=>{if(e.key==="+"||e.key==="="){orbit.r=Math.max(.8,orbit.r*.9);render();}else if(e.key==="-"){orbit.r=Math.min(6,orbit.r*1.1);render();}else if(e.key.startsWith("Arrow")){e.preventDefault();orbit.theta+=(e.key==="ArrowLeft"?-.08:e.key==="ArrowRight"?.08:0);orbit.phi=Math.min(Math.PI-.05,Math.max(.05,orbit.phi+(e.key==="ArrowUp"?-.08:e.key==="ArrowDown"?.08:0)));render();}},opts);
+  $("mode3d").onchange = e => { mat.uniforms.u_mode.value = +e.target.value; quality(true); };
+  $("view3d").onchange=e=>setView(e.target.value);
   $("clip3d").onchange = e => { clip.axis = +e.target.value; render(); };
-  $("density3d").oninput = e => { mat.uniforms.u_density.value = Math.pow(4, e.target.value*2-1); render(); };
+  $("density3d").oninput = e => { mat.uniforms.u_density.value = Math.pow(4, e.target.value*2-1); quality(true); };
 
   let vw = 2, vh = 2;
   const resize = () => {
@@ -4114,6 +4299,7 @@ function init3D(){
   };
   renderer.autoClear = false;
   const render = () => {
+    if(lost)return;
     applyCam();
     renderer.setViewport(0, 0, vw, vh);
     renderer.clear();
@@ -4135,21 +4321,30 @@ function init3D(){
     setWindow(loN, hiN){ mat.uniforms.u_lo.value = loN; mat.uniforms.u_hi.value = hiN; render(); },
     setInvert(inv){ mat.uniforms.u_invert.value = inv ? 1 : 0; render(); },
     setCmap(v){ mat.uniforms.u_cmap.value = v; render(); },
-    setTransfer(lo,hi){ mat.uniforms.u_tflo.value=lo; mat.uniforms.u_tfhi.value=hi; render(); },
+    setTransfer(data){ tfTex.image.data.set(data);tfTex.needsUpdate=true;quality(true); },
+    setOpacity(v){mat.uniforms.u_opacity.value=v;quality(true);},
+    setCrop,
     setHome(neuro){ goHome(neuro); },
-    syncCrosshair(){ setCross(); syncRects(); if (clip.axis >= 0 || slicesOn) render(); },
+    syncCrosshair(){ setCross(); syncRects(); if (clip.axis >= 0 || sliceMode) render(); },
+    resize,
+    prepareSnapshot(){quality(false);render();},
+    diagnostics(){return {texture:[tx,ty,tz],source:[nx,ny,nz],downsample:ds,max3D,budgetMB,highSteps,interactiveSteps,lost,glError:gl.getError(),programs:renderer.info.programs.map(p=>({runnable:p.diagnostics?.runnable,log:p.diagnostics?.fragmentShader?.log||p.diagnostics?.programLog||""}))};},
     dispose(){
+      clearTimeout(refineTimer);events.abort();
       canvas.removeEventListener("webglcontextlost", onContextLoss);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       ro.disconnect(); // else every past series' observer keeps resizing/rendering a disposed renderer
       rects.forEach(r => { r.geometry.dispose(); r.material.dispose(); });
+      filled.forEach(r=>r.geometry.dispose());sliceMat.dispose();cropGeo.dispose();cropBox.material.dispose();
       gz.forEach(r => r.dispose());
-      tex.dispose(); mat.dispose(); mesh.geometry.dispose(); renderer.dispose();
+      tex.dispose();tfTex.dispose(); mat.dispose(); mesh.geometry.dispose(); renderer.dispose();
     }
   };
-  applyTransfer($("tf3d").value); sync3DWindow(); resize();
+  const cr=cropRange();setCrop(cr.map(x=>x[0]),cr.map(x=>x[1]));
+  applyTransfer($("tf3d").value); sync3DWindow(); resize();setView($("view3d").value);quality(false);
 }
 function no3D(canvas){
+  volumeStatus("WebGL2 unavailable · 2D MPR remains active", "error");
   let ctx = canvas.getContext("2d");
   if (!ctx){ // the canvas already holds a WebGL(1) context — swap in a fresh one for 2D text
     const fresh = canvas.cloneNode(false);
